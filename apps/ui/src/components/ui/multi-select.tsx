@@ -1,8 +1,7 @@
-import type { JSX } from "hono/jsx";
 import { useEffect, useMemo, useState } from "hono/jsx/dom";
 import { Input } from "./input";
 import { PopoverContent } from "./popover";
-import { cx } from "./utils";
+import { cx, type ClassName } from "./utils";
 
 export type MultiSelectOption = {
 	value: string;
@@ -16,7 +15,7 @@ export type MultiSelectProps = {
 	placeholder?: string;
 	searchPlaceholder?: string;
 	emptyLabel?: string;
-	class?: JSX.ClassValue;
+	class?: ClassName;
 };
 
 export const MultiSelect = ({

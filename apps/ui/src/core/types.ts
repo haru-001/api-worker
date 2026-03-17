@@ -122,16 +122,42 @@ export type Settings = {
 	admin_password_set?: boolean;
 	checkin_schedule_time?: string;
 	model_failure_cooldown_minutes?: number;
+	runtime_settings?: RuntimeProxySettings;
 	runtime_config?: RuntimeProxyConfig;
+	cache_config?: CacheConfig;
 };
 
-export type RuntimeProxyConfig = {
+export type RuntimeProxySettings = {
+	upstream_timeout_ms: number;
 	stream_usage_mode: string;
 	stream_usage_max_bytes: number;
 	stream_usage_max_parsers: number;
 	usage_queue_enabled: boolean;
+	usage_queue_daily_limit: number;
+	usage_queue_direct_write_ratio: number;
+};
+
+export type RuntimeProxyConfig = RuntimeProxySettings & {
 	usage_queue_bound: boolean;
 	usage_queue_active: boolean;
+};
+
+export type CacheConfig = {
+	enabled: boolean;
+	dashboard_ttl_seconds: number;
+	usage_ttl_seconds: number;
+	models_ttl_seconds: number;
+	tokens_ttl_seconds: number;
+	channels_ttl_seconds: number;
+	call_tokens_ttl_seconds: number;
+	settings_ttl_seconds: number;
+	version_dashboard: number;
+	version_usage: number;
+	version_models: number;
+	version_tokens: number;
+	version_channels: number;
+	version_call_tokens: number;
+	version_settings: number;
 };
 
 export type ModelChannel = {
@@ -191,6 +217,21 @@ export type SettingsForm = {
 	admin_password: string;
 	checkin_schedule_time: string;
 	model_failure_cooldown_minutes: string;
+	proxy_upstream_timeout_ms: string;
+	proxy_stream_usage_mode: string;
+	proxy_stream_usage_max_bytes: string;
+	proxy_stream_usage_max_parsers: string;
+	proxy_usage_queue_enabled: boolean;
+	usage_queue_daily_limit: string;
+	usage_queue_direct_write_ratio: string;
+	cache_enabled: boolean;
+	cache_ttl_dashboard_seconds: string;
+	cache_ttl_usage_seconds: string;
+	cache_ttl_models_seconds: string;
+	cache_ttl_tokens_seconds: string;
+	cache_ttl_channels_seconds: string;
+	cache_ttl_call_tokens_seconds: string;
+	cache_ttl_settings_seconds: string;
 };
 
 export type TokenForm = {

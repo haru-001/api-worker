@@ -20,6 +20,10 @@ export type UsageInput = {
 	errorMessage?: string | null;
 };
 
+const PRUNE_INTERVAL_MS = 60 * 60 * 1000;
+let lastPruneAt = 0;
+let lastPruneRetention: number | null = null;
+
 /**
  * Inserts a usage record and updates token quota.
  */
@@ -84,6 +88,15 @@ export async function pruneUsageLogs(
 	db: D1Database,
 	retentionDays: number,
 ): Promise<void> {
+	const now = Date.now();
+	if (
+		lastPruneRetention === retentionDays &&
+		now - lastPruneAt < PRUNE_INTERVAL_MS
+	) {
+		return;
+	}
+	lastPruneRetention = retentionDays;
+	lastPruneAt = now;
 	const cutoff = new Date();
 	cutoff.setDate(cutoff.getDate() - retentionDays);
 	await db

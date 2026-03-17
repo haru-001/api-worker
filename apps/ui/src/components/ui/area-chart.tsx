@@ -1,6 +1,5 @@
-import type { JSX } from "hono/jsx";
 import { useMemo, useState } from "hono/jsx/dom";
-import { cx } from "./utils";
+import { cx, type ClassName } from "./utils";
 
 export type AreaChartPoint = {
 	label: string;
@@ -13,7 +12,7 @@ export type AreaChartProps = {
 	height?: number;
 	valueLabel?: string;
 	secondaryLabel?: string;
-	class?: JSX.ClassValue;
+	class?: ClassName;
 };
 
 export const AreaChart = ({

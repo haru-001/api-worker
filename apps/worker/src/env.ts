@@ -14,6 +14,7 @@ export type Bindings = {
 	PROXY_STREAM_USAGE_MAX_PARSERS?: string;
 	PROXY_USAGE_QUEUE_ENABLED?: string;
 	USAGE_QUEUE?: Queue<UsageQueueEvent>;
+	USAGE_LIMITER?: DurableObjectNamespace;
 	CHECKIN_SCHEDULER: DurableObjectNamespace;
 };
 

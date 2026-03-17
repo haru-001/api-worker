@@ -17,6 +17,10 @@ run_worker_first = true
 name = "CHECKIN_SCHEDULER"
 class_name = "CheckinScheduler"
 
+[[durable_objects.bindings]]
+name = "USAGE_LIMITER"
+class_name = "UsageLimiter"
+
 [[queues.producers]]
 queue = "usage-events"
 binding = "USAGE_QUEUE"
@@ -30,6 +34,10 @@ max_retries = 3
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["CheckinScheduler"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["UsageLimiter"]
 
 
 

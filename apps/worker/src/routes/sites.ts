@@ -17,6 +17,7 @@ import {
 	parseSiteMetadata,
 	type SiteType,
 } from "../services/site-metadata";
+import { bumpCacheVersions } from "../services/settings";
 import { generateToken } from "../utils/crypto";
 import { jsonError } from "../utils/http";
 import { nowIso } from "../utils/time";
@@ -313,6 +314,7 @@ sites.post("/", async (c) => {
 		toCallTokenRows(id, callTokens, now),
 	);
 
+	await bumpCacheVersions(c.env.DB, ["channels", "models", "call_tokens"]);
 	return c.json({ id });
 });
 
@@ -414,12 +416,14 @@ sites.patch("/:id", async (c) => {
 		);
 	}
 
+	await bumpCacheVersions(c.env.DB, ["channels", "models", "call_tokens"]);
 	return c.json({ ok: true });
 });
 
 sites.delete("/:id", async (c) => {
 	const id = c.req.param("id");
 	await deleteChannel(c.env.DB, id);
+	await bumpCacheVersions(c.env.DB, ["channels", "models", "call_tokens"]);
 	return c.json({ ok: true });
 });
 

@@ -5,17 +5,22 @@ import {
 	shouldResetLastRun,
 } from "../services/checkin-scheduler";
 import {
+	bumpCacheVersions,
+	getCacheConfig,
 	getCheckinScheduleTime,
 	getRetentionDays,
 	getSessionTtlHours,
 	getModelFailureCooldownMinutes,
+	getProxyRuntimeSettings,
 	getRuntimeProxyConfig,
 	isAdminPasswordSet,
+	setCacheConfig,
 	setAdminPasswordHash,
 	setCheckinScheduleTime,
 	setRetentionDays,
 	setSessionTtlHours,
 	setModelFailureCooldownMinutes,
+	setProxyRuntimeSettings,
 } from "../services/settings";
 import { sha256Hex } from "../utils/crypto";
 import { jsonError } from "../utils/http";
@@ -33,13 +38,18 @@ settings.get("/", async (c) => {
 	const modelFailureCooldownMinutes = await getModelFailureCooldownMinutes(
 		c.env.DB,
 	);
+	const runtimeSettings = await getProxyRuntimeSettings(c.env.DB, c.env);
+	const runtimeConfig = getRuntimeProxyConfig(c.env, runtimeSettings);
+	const cacheConfig = await getCacheConfig(c.env.DB);
 	return c.json({
 		log_retention_days: retention,
 		session_ttl_hours: sessionTtlHours,
 		admin_password_set: adminPasswordSet,
 		checkin_schedule_time: checkinScheduleTime,
 		model_failure_cooldown_minutes: modelFailureCooldownMinutes,
-		runtime_config: getRuntimeProxyConfig(c.env),
+		runtime_config: runtimeConfig,
+		runtime_settings: runtimeSettings,
+		cache_config: cacheConfig,
 	});
 });
 
@@ -53,6 +63,27 @@ settings.put("/", async (c) => {
 	}
 
 	let touched = false;
+	let cacheTouched = false;
+	let runtimeTouched = false;
+	const cachePatch: {
+		enabled?: boolean;
+		dashboardTtlSeconds?: number;
+		usageTtlSeconds?: number;
+		modelsTtlSeconds?: number;
+		tokensTtlSeconds?: number;
+		channelsTtlSeconds?: number;
+		callTokensTtlSeconds?: number;
+		settingsTtlSeconds?: number;
+	} = {};
+	const runtimePatch: {
+		upstream_timeout_ms?: number;
+		stream_usage_mode?: string;
+		stream_usage_max_bytes?: number;
+		stream_usage_max_parsers?: number;
+		usage_queue_enabled?: boolean;
+		usage_queue_daily_limit?: number;
+		usage_queue_direct_write_ratio?: number;
+	} = {};
 	let scheduleTouched = false;
 	let scheduleReset = false;
 
@@ -98,6 +129,242 @@ settings.put("/", async (c) => {
 		touched = true;
 	}
 
+	if (body.cache_enabled !== undefined) {
+		const raw = body.cache_enabled;
+		let enabled: boolean | null = null;
+		if (typeof raw === "boolean") {
+			enabled = raw;
+		} else if (typeof raw === "number") {
+			enabled = raw !== 0;
+		} else if (typeof raw === "string") {
+			const normalized = raw.trim().toLowerCase();
+			if (["1", "true", "yes", "on"].includes(normalized)) {
+				enabled = true;
+			} else if (["0", "false", "no", "off"].includes(normalized)) {
+				enabled = false;
+			}
+		}
+		if (enabled === null) {
+			return jsonError(
+				c,
+				400,
+				"invalid_cache_enabled",
+				"invalid_cache_enabled",
+			);
+		}
+		cachePatch.enabled = enabled;
+		cacheTouched = true;
+	}
+
+	if (body.cache_ttl_dashboard_seconds !== undefined) {
+		const ttl = Number(body.cache_ttl_dashboard_seconds);
+		if (Number.isNaN(ttl) || ttl < 0) {
+			return jsonError(
+				c,
+				400,
+				"invalid_cache_ttl_dashboard_seconds",
+				"invalid_cache_ttl_dashboard_seconds",
+			);
+		}
+		cachePatch.dashboardTtlSeconds = Math.floor(ttl);
+		cacheTouched = true;
+	}
+
+	if (body.cache_ttl_usage_seconds !== undefined) {
+		const ttl = Number(body.cache_ttl_usage_seconds);
+		if (Number.isNaN(ttl) || ttl < 0) {
+			return jsonError(
+				c,
+				400,
+				"invalid_cache_ttl_usage_seconds",
+				"invalid_cache_ttl_usage_seconds",
+			);
+		}
+		cachePatch.usageTtlSeconds = Math.floor(ttl);
+		cacheTouched = true;
+	}
+
+	if (body.cache_ttl_models_seconds !== undefined) {
+		const ttl = Number(body.cache_ttl_models_seconds);
+		if (Number.isNaN(ttl) || ttl < 0) {
+			return jsonError(
+				c,
+				400,
+				"invalid_cache_ttl_models_seconds",
+				"invalid_cache_ttl_models_seconds",
+			);
+		}
+		cachePatch.modelsTtlSeconds = Math.floor(ttl);
+		cacheTouched = true;
+	}
+
+	if (body.cache_ttl_tokens_seconds !== undefined) {
+		const ttl = Number(body.cache_ttl_tokens_seconds);
+		if (Number.isNaN(ttl) || ttl < 0) {
+			return jsonError(
+				c,
+				400,
+				"invalid_cache_ttl_tokens_seconds",
+				"invalid_cache_ttl_tokens_seconds",
+			);
+		}
+		cachePatch.tokensTtlSeconds = Math.floor(ttl);
+		cacheTouched = true;
+	}
+
+	if (body.cache_ttl_channels_seconds !== undefined) {
+		const ttl = Number(body.cache_ttl_channels_seconds);
+		if (Number.isNaN(ttl) || ttl < 0) {
+			return jsonError(
+				c,
+				400,
+				"invalid_cache_ttl_channels_seconds",
+				"invalid_cache_ttl_channels_seconds",
+			);
+		}
+		cachePatch.channelsTtlSeconds = Math.floor(ttl);
+		cacheTouched = true;
+	}
+
+	if (body.cache_ttl_call_tokens_seconds !== undefined) {
+		const ttl = Number(body.cache_ttl_call_tokens_seconds);
+		if (Number.isNaN(ttl) || ttl < 0) {
+			return jsonError(
+				c,
+				400,
+				"invalid_cache_ttl_call_tokens_seconds",
+				"invalid_cache_ttl_call_tokens_seconds",
+			);
+		}
+		cachePatch.callTokensTtlSeconds = Math.floor(ttl);
+		cacheTouched = true;
+	}
+
+	if (body.cache_ttl_settings_seconds !== undefined) {
+		const ttl = Number(body.cache_ttl_settings_seconds);
+		if (Number.isNaN(ttl) || ttl < 0) {
+			return jsonError(
+				c,
+				400,
+				"invalid_cache_ttl_settings_seconds",
+				"invalid_cache_ttl_settings_seconds",
+			);
+		}
+		cachePatch.settingsTtlSeconds = Math.floor(ttl);
+		cacheTouched = true;
+	}
+
+	if (body.proxy_upstream_timeout_ms !== undefined) {
+		const timeoutMs = Number(body.proxy_upstream_timeout_ms);
+		if (Number.isNaN(timeoutMs) || timeoutMs < 0) {
+			return jsonError(
+				c,
+				400,
+				"invalid_proxy_upstream_timeout_ms",
+				"invalid_proxy_upstream_timeout_ms",
+			);
+		}
+		runtimePatch.upstream_timeout_ms = Math.floor(timeoutMs);
+		runtimeTouched = true;
+	}
+
+	if (body.proxy_stream_usage_mode !== undefined) {
+		const mode = String(body.proxy_stream_usage_mode).trim().toLowerCase();
+		if (!["full", "lite", "off"].includes(mode)) {
+			return jsonError(
+				c,
+				400,
+				"invalid_proxy_stream_usage_mode",
+				"invalid_proxy_stream_usage_mode",
+			);
+		}
+		runtimePatch.stream_usage_mode = mode;
+		runtimeTouched = true;
+	}
+
+	if (body.proxy_stream_usage_max_bytes !== undefined) {
+		const maxBytes = Number(body.proxy_stream_usage_max_bytes);
+		if (Number.isNaN(maxBytes) || maxBytes < 0) {
+			return jsonError(
+				c,
+				400,
+				"invalid_proxy_stream_usage_max_bytes",
+				"invalid_proxy_stream_usage_max_bytes",
+			);
+		}
+		runtimePatch.stream_usage_max_bytes = Math.floor(maxBytes);
+		runtimeTouched = true;
+	}
+
+	if (body.proxy_stream_usage_max_parsers !== undefined) {
+		const maxParsers = Number(body.proxy_stream_usage_max_parsers);
+		if (Number.isNaN(maxParsers) || maxParsers < 0) {
+			return jsonError(
+				c,
+				400,
+				"invalid_proxy_stream_usage_max_parsers",
+				"invalid_proxy_stream_usage_max_parsers",
+			);
+		}
+		runtimePatch.stream_usage_max_parsers = Math.floor(maxParsers);
+		runtimeTouched = true;
+	}
+
+	if (body.proxy_usage_queue_enabled !== undefined) {
+		const raw = body.proxy_usage_queue_enabled;
+		let enabled: boolean | null = null;
+		if (typeof raw === "boolean") {
+			enabled = raw;
+		} else if (typeof raw === "number") {
+			enabled = raw !== 0;
+		} else if (typeof raw === "string") {
+			const normalized = raw.trim().toLowerCase();
+			if (["1", "true", "yes", "on"].includes(normalized)) {
+				enabled = true;
+			} else if (["0", "false", "no", "off"].includes(normalized)) {
+				enabled = false;
+			}
+		}
+		if (enabled === null) {
+			return jsonError(
+				c,
+				400,
+				"invalid_proxy_usage_queue_enabled",
+				"invalid_proxy_usage_queue_enabled",
+			);
+		}
+		runtimePatch.usage_queue_enabled = enabled;
+		runtimeTouched = true;
+	}
+
+	if (body.usage_queue_daily_limit !== undefined) {
+		const limit = Number(body.usage_queue_daily_limit);
+		if (Number.isNaN(limit) || limit < 0) {
+			return jsonError(
+				c,
+				400,
+				"invalid_usage_queue_daily_limit",
+				"invalid_usage_queue_daily_limit",
+			);
+		}
+		runtimePatch.usage_queue_daily_limit = Math.floor(limit);
+		runtimeTouched = true;
+	}
+
+	if (body.usage_queue_direct_write_ratio !== undefined) {
+		const ratio = Number(body.usage_queue_direct_write_ratio);
+		if (Number.isNaN(ratio) || ratio < 0 || ratio > 1) {
+			return jsonError(
+				c,
+				400,
+				"invalid_usage_queue_direct_write_ratio",
+				"invalid_usage_queue_direct_write_ratio",
+			);
+		}
+		runtimePatch.usage_queue_direct_write_ratio = ratio;
+		runtimeTouched = true;
+	}
+
 	if (typeof body.admin_password === "string" && body.admin_password.trim()) {
 		const hash = await sha256Hex(body.admin_password.trim());
 		await setAdminPasswordHash(c.env.DB, hash);
@@ -137,6 +404,16 @@ settings.put("/", async (c) => {
 		scheduleReset = shouldResetLastRun(currentTime, timeValue);
 	}
 
+	if (cacheTouched) {
+		await setCacheConfig(c.env.DB, cachePatch);
+		touched = true;
+	}
+
+	if (runtimeTouched) {
+		await setProxyRuntimeSettings(c.env.DB, runtimePatch);
+		touched = true;
+	}
+
 	if (!touched) {
 		return jsonError(c, 400, "settings_empty", "settings_empty");
 	}
@@ -149,6 +426,19 @@ settings.put("/", async (c) => {
 		});
 	}
 
+	return c.json({ ok: true });
+});
+
+settings.post("/cache/refresh", async (c) => {
+	await bumpCacheVersions(c.env.DB, [
+		"dashboard",
+		"usage",
+		"models",
+		"tokens",
+		"channels",
+		"call_tokens",
+		"settings",
+	]);
 	return c.json({ ok: true });
 });
 

@@ -144,3 +144,4 @@ export default {
 };
 
 export { CheckinScheduler } from "./services/checkin-scheduler";
+export { UsageLimiter } from "./services/usage-limiter";

@@ -1,8 +1,7 @@
-import type { JSX } from "hono/jsx";
 import { useEffect, useMemo, useState } from "hono/jsx/dom";
 import { Button } from "./button";
 import { Popover, PopoverContent } from "./popover";
-import { cx } from "./utils";
+import { cx, type ClassName } from "./utils";
 
 export type ColumnOption = {
 	id: string;
@@ -16,7 +15,7 @@ export type ColumnPickerProps = {
 	columns: ColumnOption[];
 	value: string[];
 	onChange: (next: string[]) => void;
-	class?: JSX.ClassValue;
+	class?: ClassName;
 };
 
 export const ColumnPicker = ({

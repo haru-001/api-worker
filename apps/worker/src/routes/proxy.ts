@@ -21,7 +21,9 @@ import {
 	listVerifiedModelsByChannel,
 } from "../services/channel-model-capabilities";
 import {
+	getCacheConfig,
 	getModelFailureCooldownMinutes,
+	getProxyRuntimeSettings,
 } from "../services/settings";
 import {
 	applyGeminiModelToPath,
@@ -41,10 +43,15 @@ import {
 	parseDownstreamStream,
 } from "../services/provider-transform";
 import { processUsageQueueEvent, type UsageQueueEvent } from "../services/usage-queue";
+import {
+	getUsageLimiterStub,
+	reserveUsageQueue,
+} from "../services/usage-limiter";
 import { jsonError } from "../utils/http";
 import { safeJsonParse } from "../utils/json";
 import { extractReasoningEffort } from "../utils/reasoning";
 import { normalizeBaseUrl } from "../utils/url";
+import { withJsonCache } from "../utils/cache";
 import {
 	type NormalizedUsage,
 	parseUsageFromHeaders,
@@ -80,10 +87,6 @@ type ErrorDetails = {
 
 const FAILURE_COUNT_THRESHOLD = 2;
 
-const STREAM_USAGE_DEFAULT_MODE: StreamUsageMode = "full";
-const STREAM_USAGE_DEFAULT_MAX_BYTES = 0;
-const STREAM_USAGE_DEFAULT_MAX_PARSERS = 0;
-
 let activeStreamUsageParsers = 0;
 
 function normalizeMessage(value: string | null): string | null {
@@ -97,71 +100,97 @@ function normalizeMessage(value: string | null): string | null {
 	return trimmed;
 }
 
-function parseNonNegativeInt(value: string | undefined): number | null {
-	if (value === undefined || value === null || value === "") {
-		return null;
-	}
-	const parsed = Number(value);
-	if (Number.isFinite(parsed) && parsed >= 0) {
-		return Math.floor(parsed);
-	}
-	return null;
-}
-
-function normalizeStreamUsageMode(value: string | undefined): StreamUsageMode {
-	const normalized = (value ?? "").toLowerCase();
-	if (normalized === "off") {
-		return "off";
-	}
-	if (normalized === "full") {
-		return "full";
-	}
-	return STREAM_USAGE_DEFAULT_MODE;
-}
-
-function getStreamUsageOptions(env: AppEnv["Bindings"]): StreamUsageOptions {
-	const maxBytesRaw = parseNonNegativeInt(env.PROXY_STREAM_USAGE_MAX_BYTES);
+function getStreamUsageOptions(
+	settings: {
+		stream_usage_mode: string;
+		stream_usage_max_bytes: number;
+	},
+): StreamUsageOptions {
 	return {
-		mode: normalizeStreamUsageMode(env.PROXY_STREAM_USAGE_MODE),
-		maxBytes:
-			maxBytesRaw === null ? STREAM_USAGE_DEFAULT_MAX_BYTES : maxBytesRaw,
+		mode: settings.stream_usage_mode as StreamUsageMode,
+		maxBytes: Math.max(0, Math.floor(settings.stream_usage_max_bytes)),
 	};
 }
 
-function getStreamUsageMaxParsers(env: AppEnv["Bindings"]): number {
-	const maxParsersRaw = parseNonNegativeInt(env.PROXY_STREAM_USAGE_MAX_PARSERS);
-	if (maxParsersRaw === null) {
-		return STREAM_USAGE_DEFAULT_MAX_PARSERS;
-	}
-	if (maxParsersRaw === 0) {
+function getStreamUsageMaxParsers(settings: {
+	stream_usage_max_parsers: number;
+}): number {
+	const maxParsers = Math.max(0, Math.floor(settings.stream_usage_max_parsers));
+	if (maxParsers === 0) {
 		return Number.POSITIVE_INFINITY;
 	}
-	return maxParsersRaw;
+	return maxParsers;
 }
 
-function usageQueueEnabled(env: AppEnv["Bindings"]): boolean {
-	if (env.PROXY_USAGE_QUEUE_ENABLED === "false") {
-		return false;
-	}
-	return Boolean(env.USAGE_QUEUE);
-}
-
-function scheduleUsageEvent(
+function createUsageEventScheduler(
 	c: { env: AppEnv["Bindings"]; executionCtx?: ExecutionContextLike },
-	event: UsageQueueEvent,
-): void {
+	settings: {
+		usage_queue_enabled: boolean;
+		usage_queue_daily_limit: number;
+		usage_queue_direct_write_ratio: number;
+	},
+): (event: UsageQueueEvent) => void {
 	const queue = c.env.USAGE_QUEUE;
-	if (queue && usageQueueEnabled(c.env)) {
-		const task = queue.send(event).catch((error) => {
-			console.warn("[usage-queue:send_failed]", {
+	const queueBound = Boolean(queue);
+	const queueEnabled = settings.usage_queue_enabled && queueBound;
+	const limiter = c.env.USAGE_LIMITER
+		? getUsageLimiterStub(c.env.USAGE_LIMITER)
+		: null;
+	const directRatio = settings.usage_queue_direct_write_ratio;
+	const dailyLimit = settings.usage_queue_daily_limit;
+	let overLimit = false;
+	let decisionChain = Promise.resolve();
+
+	const decide = async (): Promise<boolean> => {
+		if (!queueEnabled) {
+			return false;
+		}
+		if (overLimit) {
+			return false;
+		}
+		if (Math.random() < directRatio) {
+			return false;
+		}
+		if (!limiter || dailyLimit <= 0) {
+			return true;
+		}
+		try {
+			const result = await reserveUsageQueue(limiter, {
+				limit: dailyLimit,
+				amount: 1,
+			});
+			if (!result.allowed) {
+				overLimit = true;
+			}
+			return result.allowed;
+		} catch (error) {
+			console.warn("[usage-limiter:reserve_failed]", {
 				error: error instanceof Error ? error.message : String(error),
 			});
+			return false;
+		}
+	};
+
+	const decideSequential = () => {
+		const decision = decisionChain.then(decide);
+		decisionChain = decision.catch(() => undefined);
+		return decision;
+	};
+
+	return (event: UsageQueueEvent) => {
+		const task = decideSequential().then((useQueue) => {
+			if (useQueue && queue) {
+				return queue.send(event).catch((error) => {
+					console.warn("[usage-queue:send_failed]", {
+						error: error instanceof Error ? error.message : String(error),
+					});
+					return processUsageQueueEvent(c.env.DB, event);
+				});
+			}
 			return processUsageQueueEvent(c.env.DB, event);
 		});
 		scheduleDbWrite(c, task);
-		return;
-	}
-	scheduleDbWrite(c, processUsageQueueEvent(c.env.DB, event));
+	};
 }
 
 async function extractErrorDetails(
@@ -426,6 +455,11 @@ async function fetchWithTimeout(
 proxy.all("/*", tokenAuth, async (c) => {
 	const tokenRecord = c.get("tokenRecord") as TokenRecord;
 	const requestStart = Date.now();
+	const [cacheConfig, runtimeSettings] = await Promise.all([
+		getCacheConfig(c.env.DB),
+		getProxyRuntimeSettings(c.env.DB, c.env),
+	]);
+	const scheduleUsageEvent = createUsageEventScheduler(c, runtimeSettings);
 	let requestText = await c.req.text();
 	const parsedBody = requestText
 		? safeJsonParse<Record<string, unknown> | null>(requestText, null)
@@ -517,15 +551,37 @@ proxy.all("/*", tokenAuth, async (c) => {
 		});
 	};
 
-	const channelResult = await c.env.DB.prepare(
-		"SELECT * FROM channels WHERE status = ?",
-	)
-		.bind("active")
-		.all();
-	const activeChannels = (channelResult.results ?? []) as ChannelRecord[];
-	const callTokenRows = await listCallTokens(c.env.DB, {
-		channelIds: activeChannels.map((channel) => channel.id),
-	});
+	const activeChannels = await withJsonCache<ChannelRecord[]>(
+		{
+			namespace: "channels",
+			key: "active",
+			version: cacheConfig.version_channels,
+			ttlSeconds: cacheConfig.channels_ttl_seconds,
+			enabled: cacheConfig.enabled,
+		},
+		async () => {
+			const result = await c.env.DB
+				.prepare("SELECT * FROM channels WHERE status = ?")
+				.bind("active")
+				.all();
+			return (result.results ?? []) as ChannelRecord[];
+		},
+	);
+	const channelIds = activeChannels.map((channel) => channel.id);
+	const callTokenKey = channelIds.slice().sort().join(",");
+	const callTokenRows = await withJsonCache(
+		{
+			namespace: "call_tokens",
+			key: callTokenKey,
+			version: cacheConfig.version_call_tokens,
+			ttlSeconds: cacheConfig.call_tokens_ttl_seconds,
+			enabled: cacheConfig.enabled,
+		},
+		() =>
+			listCallTokens(c.env.DB, {
+				channelIds,
+			}),
+	);
 	const callTokenMap = new Map<string, CallTokenItem[]>();
 	for (const row of callTokenRows) {
 		const entry: CallTokenItem = {
@@ -609,7 +665,7 @@ proxy.all("/*", tokenAuth, async (c) => {
 	const ordered = createWeightedOrder(candidates);
 	const upstreamTimeoutMs = Math.max(
 		1000,
-		Number(c.env.PROXY_UPSTREAM_TIMEOUT_MS ?? "30000"),
+		Number(runtimeSettings.upstream_timeout_ms ?? 30000),
 	);
 	const nowSeconds = Math.floor(Date.now() / 1000);
 	let lastResponse: Response | null = null;
@@ -1099,8 +1155,8 @@ proxy.all("/*", tokenAuth, async (c) => {
 		if (isStream && lastResponse.ok) {
 			const executionCtx = (c as { executionCtx?: ExecutionContextLike })
 				.executionCtx;
-			const streamUsageOptions = getStreamUsageOptions(c.env);
-			const streamUsageMaxParsers = getStreamUsageMaxParsers(c.env);
+			const streamUsageOptions = getStreamUsageOptions(runtimeSettings);
+			const streamUsageMaxParsers = getStreamUsageMaxParsers(runtimeSettings);
 			const canParseStream =
 				streamUsageOptions.mode !== "off" &&
 				activeStreamUsageParsers < streamUsageMaxParsers;

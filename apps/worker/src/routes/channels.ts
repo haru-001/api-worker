@@ -17,6 +17,7 @@ import {
 	testChannelTokens,
 	updateChannelTestResult,
 } from "../services/channel-testing";
+import { bumpCacheVersions } from "../services/settings";
 import { generateToken } from "../utils/crypto";
 import { jsonError } from "../utils/http";
 import { safeJsonParse } from "../utils/json";
@@ -108,6 +109,7 @@ channels.post("/", async (c) => {
 		updated_at: now,
 	});
 
+	await bumpCacheVersions(c.env.DB, ["channels", "models"]);
 	return c.json({ id });
 });
 
@@ -151,6 +153,7 @@ channels.patch("/:id", async (c) => {
 		updated_at: nowIso(),
 	});
 
+	await bumpCacheVersions(c.env.DB, ["channels", "models"]);
 	return c.json({ ok: true });
 });
 
@@ -160,6 +163,7 @@ channels.patch("/:id", async (c) => {
 channels.delete("/:id", async (c) => {
 	const id = c.req.param("id");
 	await deleteChannel(c.env.DB, id);
+	await bumpCacheVersions(c.env.DB, ["channels", "models"]);
 	return c.json({ ok: true });
 });
 
@@ -216,6 +220,7 @@ channels.post("/:id/test", async (c) => {
 		modelsJson: modelsToJson(summary.models),
 	});
 
+	await bumpCacheVersions(c.env.DB, ["channels", "models", "call_tokens"]);
 	return c.json({
 		ok: true,
 		models,

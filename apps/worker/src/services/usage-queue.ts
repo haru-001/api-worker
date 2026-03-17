@@ -1,8 +1,4 @@
-import type {
-	D1Database,
-	ExecutionContext,
-	QueueBatch,
-} from "@cloudflare/workers-types";
+import type { D1Database, ExecutionContext } from "@cloudflare/workers-types";
 import type { Bindings } from "../env";
 import { recordChannelModelError, upsertChannelModelCapabilities } from "./channel-model-capabilities";
 import type { UsageInput } from "./usage";
@@ -30,6 +26,17 @@ export type UsageQueueEvent =
 				nowSeconds?: number;
 			};
 	  };
+
+type QueueMessage<T> = {
+	body: T;
+	ack: () => void;
+	retry: () => void;
+};
+
+type QueueBatchLike<T> = {
+	queue: string;
+	messages: QueueMessage<T>[];
+};
 
 function resolveNowSeconds(value?: number): number {
 	if (typeof value === "number" && Number.isFinite(value) && value > 0) {
@@ -69,7 +76,7 @@ export async function processUsageQueueEvent(
 }
 
 export async function handleUsageQueue(
-	batch: QueueBatch<UsageQueueEvent>,
+	batch: QueueBatchLike<UsageQueueEvent>,
 	env: Bindings,
 	ctx: ExecutionContext,
 ): Promise<void> {

@@ -51,6 +51,21 @@ export const initialSettingsForm: SettingsForm = {
 	admin_password: "",
 	checkin_schedule_time: "00:10",
 	model_failure_cooldown_minutes: "10",
+	proxy_upstream_timeout_ms: "30000",
+	proxy_stream_usage_mode: "full",
+	proxy_stream_usage_max_bytes: "0",
+	proxy_stream_usage_max_parsers: "0",
+	proxy_usage_queue_enabled: true,
+	usage_queue_daily_limit: "10000",
+	usage_queue_direct_write_ratio: "0.5",
+	cache_enabled: true,
+	cache_ttl_dashboard_seconds: "30",
+	cache_ttl_usage_seconds: "15",
+	cache_ttl_models_seconds: "60",
+	cache_ttl_tokens_seconds: "15",
+	cache_ttl_channels_seconds: "15",
+	cache_ttl_call_tokens_seconds: "15",
+	cache_ttl_settings_seconds: "30",
 };
 
 export const initialDashboardQuery: DashboardQuery = {

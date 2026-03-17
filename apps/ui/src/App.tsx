@@ -305,8 +305,12 @@ const App = () => {
 	);
 	const [checkinLastRun, setCheckinLastRun] = useState<string | null>(null);
 	const [, setPendingActions] = useState<Set<string>>(() => new Set());
-	const pendingActionsRef = useRef<Set<string>>(new Set());
-	const noticeTimersRef = useRef<Map<number, number>>(new Map());
+	const pendingActionsRef = useRef<Set<string>>(new Set()) as {
+		current: Set<string>;
+	};
+	const noticeTimersRef = useRef<Map<number, number>>(new Map()) as {
+		current: Map<number, number>;
+	};
 	const [confirmState, setConfirmState] = useState<ConfirmState | null>(null);
 	const [confirmPending, setConfirmPending] = useState(false);
 
@@ -649,6 +653,9 @@ const App = () => {
 		if (!data.settings) {
 			return;
 		}
+		const cacheConfig = data.settings.cache_config;
+		const runtimeSettings =
+			data.settings.runtime_settings ?? data.settings.runtime_config;
 		setSettingsForm({
 			log_retention_days: String(data.settings.log_retention_days ?? 30),
 			session_ttl_hours: String(data.settings.session_ttl_hours ?? 12),
@@ -656,6 +663,41 @@ const App = () => {
 			checkin_schedule_time: data.settings.checkin_schedule_time ?? "00:10",
 			model_failure_cooldown_minutes: String(
 				data.settings.model_failure_cooldown_minutes ?? 10,
+			),
+			proxy_upstream_timeout_ms: String(
+				runtimeSettings?.upstream_timeout_ms ?? 30000,
+			),
+			proxy_stream_usage_mode:
+				runtimeSettings?.stream_usage_mode ?? "full",
+			proxy_stream_usage_max_bytes: String(
+				runtimeSettings?.stream_usage_max_bytes ?? 0,
+			),
+			proxy_stream_usage_max_parsers: String(
+				runtimeSettings?.stream_usage_max_parsers ?? 0,
+			),
+			proxy_usage_queue_enabled:
+				runtimeSettings?.usage_queue_enabled ?? true,
+			usage_queue_daily_limit: String(
+				runtimeSettings?.usage_queue_daily_limit ?? 10000,
+			),
+			usage_queue_direct_write_ratio: String(
+				runtimeSettings?.usage_queue_direct_write_ratio ?? 0.5,
+			),
+			cache_enabled: cacheConfig?.enabled ?? true,
+			cache_ttl_dashboard_seconds: String(
+				cacheConfig?.dashboard_ttl_seconds ?? 30,
+			),
+			cache_ttl_usage_seconds: String(cacheConfig?.usage_ttl_seconds ?? 15),
+			cache_ttl_models_seconds: String(cacheConfig?.models_ttl_seconds ?? 60),
+			cache_ttl_tokens_seconds: String(cacheConfig?.tokens_ttl_seconds ?? 15),
+			cache_ttl_channels_seconds: String(
+				cacheConfig?.channels_ttl_seconds ?? 15,
+			),
+			cache_ttl_call_tokens_seconds: String(
+				cacheConfig?.call_tokens_ttl_seconds ?? 15,
+			),
+			cache_ttl_settings_seconds: String(
+				cacheConfig?.settings_ttl_seconds ?? 30,
 			),
 		});
 	}, [data.settings]);
@@ -1260,6 +1302,34 @@ const App = () => {
 			const failureCooldownMinutes = Number(
 				settingsForm.model_failure_cooldown_minutes,
 			);
+			const upstreamTimeoutMs = Number(settingsForm.proxy_upstream_timeout_ms);
+			const streamUsageMode =
+				settingsForm.proxy_stream_usage_mode.trim().toLowerCase();
+			const streamUsageMaxBytes = Number(
+				settingsForm.proxy_stream_usage_max_bytes,
+			);
+			const streamUsageMaxParsers = Number(
+				settingsForm.proxy_stream_usage_max_parsers,
+			);
+			const usageQueueDailyLimit = Number(
+				settingsForm.usage_queue_daily_limit,
+			);
+			const usageQueueDirectRatio = Number(
+				settingsForm.usage_queue_direct_write_ratio,
+			);
+			const cacheDashboardTtl = Number(
+				settingsForm.cache_ttl_dashboard_seconds,
+			);
+			const cacheUsageTtl = Number(settingsForm.cache_ttl_usage_seconds);
+			const cacheModelsTtl = Number(settingsForm.cache_ttl_models_seconds);
+			const cacheTokensTtl = Number(settingsForm.cache_ttl_tokens_seconds);
+			const cacheChannelsTtl = Number(settingsForm.cache_ttl_channels_seconds);
+			const cacheCallTokensTtl = Number(
+				settingsForm.cache_ttl_call_tokens_seconds,
+			);
+			const cacheSettingsTtl = Number(
+				settingsForm.cache_ttl_settings_seconds,
+			);
 			if (
 				Number.isNaN(retention) ||
 				retention < 1 ||
@@ -1273,6 +1343,53 @@ const App = () => {
 				pushNotice("warning", "失败冷却需为正整数");
 				return;
 			}
+			if (Number.isNaN(upstreamTimeoutMs) || upstreamTimeoutMs < 0) {
+				pushNotice("warning", "上游超时需为非负整数");
+				return;
+			}
+			if (!["full", "lite", "off"].includes(streamUsageMode)) {
+				pushNotice("warning", "流式解析模式需为 full/lite/off");
+				return;
+			}
+			if (Number.isNaN(streamUsageMaxBytes) || streamUsageMaxBytes < 0) {
+				pushNotice("warning", "最大字节数需为非负整数");
+				return;
+			}
+			if (Number.isNaN(streamUsageMaxParsers) || streamUsageMaxParsers < 0) {
+				pushNotice("warning", "并发上限需为非负整数");
+				return;
+			}
+			if (Number.isNaN(usageQueueDailyLimit) || usageQueueDailyLimit < 0) {
+				pushNotice("warning", "队列日限额需为非负整数");
+				return;
+			}
+			if (
+				Number.isNaN(usageQueueDirectRatio) ||
+				usageQueueDirectRatio < 0 ||
+				usageQueueDirectRatio > 1
+			) {
+				pushNotice("warning", "直写比例需在 0-1 之间");
+				return;
+			}
+			if (
+				Number.isNaN(cacheDashboardTtl) ||
+				cacheDashboardTtl < 0 ||
+				Number.isNaN(cacheUsageTtl) ||
+				cacheUsageTtl < 0 ||
+				Number.isNaN(cacheModelsTtl) ||
+				cacheModelsTtl < 0 ||
+				Number.isNaN(cacheTokensTtl) ||
+				cacheTokensTtl < 0 ||
+				Number.isNaN(cacheChannelsTtl) ||
+				cacheChannelsTtl < 0 ||
+				Number.isNaN(cacheCallTokensTtl) ||
+				cacheCallTokensTtl < 0 ||
+				Number.isNaN(cacheSettingsTtl) ||
+				cacheSettingsTtl < 0
+			) {
+				pushNotice("warning", "缓存 TTL 需为非负整数");
+				return;
+			}
 			startAction(actionKey);
 			const payload: Record<string, number | string | boolean> = {
 				log_retention_days: retention,
@@ -1280,6 +1397,21 @@ const App = () => {
 				checkin_schedule_time:
 					settingsForm.checkin_schedule_time.trim() || "00:10",
 				model_failure_cooldown_minutes: failureCooldownMinutes,
+				proxy_upstream_timeout_ms: upstreamTimeoutMs,
+				proxy_stream_usage_mode: streamUsageMode,
+				proxy_stream_usage_max_bytes: streamUsageMaxBytes,
+				proxy_stream_usage_max_parsers: streamUsageMaxParsers,
+				proxy_usage_queue_enabled: settingsForm.proxy_usage_queue_enabled,
+				usage_queue_daily_limit: usageQueueDailyLimit,
+				usage_queue_direct_write_ratio: usageQueueDirectRatio,
+				cache_enabled: settingsForm.cache_enabled,
+				cache_ttl_dashboard_seconds: cacheDashboardTtl,
+				cache_ttl_usage_seconds: cacheUsageTtl,
+				cache_ttl_models_seconds: cacheModelsTtl,
+				cache_ttl_tokens_seconds: cacheTokensTtl,
+				cache_ttl_channels_seconds: cacheChannelsTtl,
+				cache_ttl_call_tokens_seconds: cacheCallTokensTtl,
+				cache_ttl_settings_seconds: cacheSettingsTtl,
 			};
 			const password = settingsForm.admin_password.trim();
 			if (password) {
@@ -1309,6 +1441,30 @@ const App = () => {
 			startAction,
 		],
 	);
+
+	const handleCacheRefresh = useCallback(async () => {
+		const actionKey = buildActionKey("settings:cache:refresh");
+		if (isActionPending(actionKey)) {
+			return;
+		}
+		startAction(actionKey);
+		try {
+			await apiFetch("/api/settings/cache/refresh", { method: "POST" });
+			await loadSettings();
+			pushNotice("success", "缓存已刷新");
+		} catch (error) {
+			pushNotice("error", (error as Error).message);
+		} finally {
+			endAction(actionKey);
+		}
+	}, [
+		apiFetch,
+		endAction,
+		isActionPending,
+		loadSettings,
+		pushNotice,
+		startAction,
+	]);
 
 	const handleSiteDelete = useCallback(
 		async (id: string) => {
@@ -1741,10 +1897,15 @@ const App = () => {
 				<SettingsView
 					settingsForm={settingsForm}
 					adminPasswordSet={data.settings?.admin_password_set ?? false}
+					cacheConfig={data.settings?.cache_config ?? null}
+					isRefreshingCache={isActionPending(
+						buildActionKey("settings:cache:refresh"),
+					)}
 					runtimeConfig={data.settings?.runtime_config ?? null}
 					isSaving={isActionPending(buildActionKey("settings:submit"))}
 					onSubmit={handleSettingsSubmit}
 					onFormChange={handleSettingsFormChange}
+					onRefreshCache={handleCacheRefresh}
 				/>
 			);
 		}

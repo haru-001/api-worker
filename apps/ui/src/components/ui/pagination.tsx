@@ -1,6 +1,5 @@
-import type { JSX } from "hono/jsx";
 import { Button } from "./button";
-import { cx } from "./utils";
+import { cx, type ClassName } from "./utils";
 
 export type PaginationItem = number | "ellipsis";
 
@@ -10,7 +9,7 @@ export type PaginationProps = {
 	items: PaginationItem[];
 	onPageChange: (next: number) => void;
 	disabled?: boolean;
-	class?: JSX.ClassValue;
+	class?: ClassName;
 };
 
 export const Pagination = ({

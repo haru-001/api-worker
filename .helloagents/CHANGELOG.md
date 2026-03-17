@@ -9,6 +9,10 @@
 
 ### 变更
 
+- **[settings/proxy/usage/admin-ui]**: 运行时设置可在后台配置，新增队列日限额与直写比例并接入 UsageLimiter — by lsy
+  - 方案: [202603180031_usage-queue-simplified](archive/2026-03/202603180031_usage-queue-simplified/)
+- **[cache/settings/proxy/usage/admin-ui]**: 引入分组缓存与自动失效，面板/日志/模型短期缓存可配置，清理节流并补齐索引 — by lsy
+  - 方案: [202603172242_cache-strategy-optimizations](plan/202603172242_cache-strategy-optimizations/)
 - **[deploy/proxy/settings]**: 调整 stream usage 默认值并避免部署覆盖云端变量 — by lsy
   - 方案: [202603170025_runtime-defaults-no-override](archive/2026-03/202603170025_runtime-defaults-no-override/)
 - **[admin-ui/usage]**: 使用日志渠道筛选改为搜索多选，分页条数与列偏好本地记忆 — by lsy
