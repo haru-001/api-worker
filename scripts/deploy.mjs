@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
-import { access, readFile, writeFile } from "node:fs/promises";
+import { access } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { createInterface } from "node:readline/promises";
@@ -8,8 +8,6 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DEFAULT_CONFIG = "apps/worker/wrangler.toml";
-const DEFAULT_ENV_FILE = path.join(ROOT, ".env");
-const DEFAULT_ENV_EXAMPLE = path.join(ROOT, ".env.example");
 const BUN_CMD = (() => {
 	if (process.env.BUN_BIN && existsSync(process.env.BUN_BIN)) {
 		return process.env.BUN_BIN;
@@ -159,56 +157,6 @@ const runCapture = (command, args, options = {}) =>
 const runBun = (args, options) => run(BUN_CMD, args, options);
 const runBunx = (args, options) => run(BUN_CMD, ["x", ...args], options);
 
-const parseEnvLine = (line) => {
-	const trimmed = line.trim();
-	if (!trimmed || trimmed.startsWith("#")) {
-		return null;
-	}
-	const idx = trimmed.indexOf("=");
-	if (idx === -1) {
-		return null;
-	}
-	const key = trimmed.slice(0, idx).trim();
-	let value = trimmed.slice(idx + 1).trim();
-	if (
-		(value.startsWith("\"") && value.endsWith("\"")) ||
-		(value.startsWith("'") && value.endsWith("'"))
-	) {
-		value = value.slice(1, -1);
-	}
-	return { key, value };
-};
-
-const loadEnvFile = async (filePath) => {
-	if (!existsSync(filePath)) {
-		return [];
-	}
-	const raw = await readFile(filePath, "utf8");
-	const lines = raw.split(/\r?\n/);
-	for (const line of lines) {
-		const parsed = parseEnvLine(line);
-		if (!parsed) {
-			continue;
-		}
-		if (process.env[parsed.key] === undefined) {
-			process.env[parsed.key] = parsed.value;
-		}
-	}
-	return lines;
-};
-
-const ensureEnvFile = async (filePath, examplePath) => {
-	if (existsSync(filePath)) {
-		return;
-	}
-	if (existsSync(examplePath)) {
-		const template = await readFile(examplePath, "utf8");
-		await writeFile(filePath, template, "utf8");
-		return;
-	}
-	await writeFile(filePath, "# 本地部署环境变量（自动生成）\n", "utf8");
-};
-
 const promptChoice = async (rl, label, choices, defaultValue) => {
 	const choicesText = choices.join("/");
 	const defaultText = defaultValue ? ` [${defaultValue}]` : "";
@@ -340,8 +288,6 @@ const main = async () => {
 	const configPath = path.resolve(ROOT, options.config);
 
 	await access(configPath);
-	await ensureEnvFile(DEFAULT_ENV_FILE, DEFAULT_ENV_EXAMPLE);
-	await loadEnvFile(DEFAULT_ENV_FILE);
 
 	if (options.action === "init") {
 		options.target = "both";

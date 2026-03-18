@@ -25,6 +25,7 @@
 - 对 `/v1/responses` 且上游返回 400/404 时回退为 `/responses` 重试一次
 - 可配置失败重试轮询（响应 5xx/429 时触发）
 - 记录流式请求标记、首 token 延迟与推理强度到 usage_logs
+- usage 事件调度仅传 event 对象，失败请求也必须记录 error usage
 - 使用日志与模型能力写入可通过 `USAGE_QUEUE` 异步化（队列不可用时自动回退同步写入）
 - 队列写入采用“两态简化逻辑”：未超限时按比例直写/队列，超限后全部直写
 - 队列日限额由 `UsageLimiter` DO 维护，限制 `USAGE_QUEUE` 的日内发送量

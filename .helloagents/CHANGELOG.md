@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### ????
+
+- **[proxy/usage]**: ???? usage ?????? ? by lsy
+  - ??: ??????????
+  - ??: apps/worker/src/routes/proxy.ts:70-560, .helloagents/modules/proxy.md:20-40, .helloagents/modules/usage.md:10-30
+
+
+### ??
+
+- **[proxy/usage]**: ?? usage ???????????? ? by lsy
+  - ??: [202603181533_usage-event-call-fix](archive/2026-03/202603181533_usage-event-call-fix/)
+
+
 ### 新增
 
 - **[deploy-workflow]**: 新增本地一键部署脚本（init/update） — by lsy
@@ -227,6 +240,9 @@
 
 ### 快速修改
 
+- **[deploy-workflow]**: 本地部署脚本移除 .env 自动生成与加载 — by lsy
+  - 类型: 快速修改（无方案包）
+  - 文件: scripts/deploy.mjs:1-292
 - **[admin-ui/settings]**: 缓存 TTL 与版本成对展示为卡片 — by lsy
   - 类型: 快速修改（无方案包）
   - 文件: apps/ui/src/features/SettingsView.tsx:417-632

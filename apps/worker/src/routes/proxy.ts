@@ -531,7 +531,7 @@ proxy.all("/*", tokenAuth, async (c) => {
 	}) => {
 		const latencyMs = Date.now() - requestStart;
 		const errorMessage = options.message ?? options.code;
-		scheduleUsageEvent(c, {
+		scheduleUsageEvent({
 			type: "usage",
 			payload: {
 				tokenId: tokenRecord.id,
@@ -938,7 +938,7 @@ proxy.all("/*", tokenAuth, async (c) => {
 				selectedUpstreamModel = upstreamModel;
 				lastErrorDetails = null;
 				if (recordModel) {
-					scheduleUsageEvent(c, {
+					scheduleUsageEvent({
 						type: "capability_upsert",
 						payload: {
 							channelId: channel.id,
@@ -960,7 +960,7 @@ proxy.all("/*", tokenAuth, async (c) => {
 				errorInfo.errorCode,
 			);
 			if (recordModel && cooldownSeconds > 0 && cooldownEligible) {
-				scheduleUsageEvent(c, {
+				scheduleUsageEvent({
 					type: "model_error",
 					payload: {
 						channelId: channel.id,
@@ -976,7 +976,7 @@ proxy.all("/*", tokenAuth, async (c) => {
 				cooldownSeconds > 0 &&
 				cooldownEligible
 			) {
-				scheduleUsageEvent(c, {
+				scheduleUsageEvent({
 					type: "model_error",
 					payload: {
 						channelId: channel.id,
@@ -1012,7 +1012,7 @@ proxy.all("/*", tokenAuth, async (c) => {
 				isTimeout ? "timeout" : "exception",
 			);
 			if (recordModel && cooldownSeconds > 0 && cooldownEligible) {
-				scheduleUsageEvent(c, {
+				scheduleUsageEvent({
 					type: "model_error",
 					payload: {
 						channelId: channel.id,
@@ -1028,7 +1028,7 @@ proxy.all("/*", tokenAuth, async (c) => {
 				cooldownSeconds > 0 &&
 				cooldownEligible
 			) {
-				scheduleUsageEvent(c, {
+				scheduleUsageEvent({
 					type: "model_error",
 					payload: {
 						channelId: channel.id,
@@ -1060,7 +1060,7 @@ proxy.all("/*", tokenAuth, async (c) => {
 			latency_ms: latencyMs,
 			last_channel_id: lastChannel?.id ?? null,
 		});
-		scheduleUsageEvent(c, {
+		scheduleUsageEvent({
 			type: "usage",
 			payload: {
 				tokenId: tokenRecord.id,
@@ -1113,7 +1113,7 @@ proxy.all("/*", tokenAuth, async (c) => {
 					? usageMissingReason ?? "usage_missing"
 					: null
 				: errorDetails?.errorMessage ?? null;
-			scheduleUsageEvent(c, {
+			scheduleUsageEvent({
 				type: "usage",
 				payload: {
 					tokenId: tokenRecord.id,
