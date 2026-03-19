@@ -130,6 +130,7 @@ export type Settings = {
 
 export type RuntimeProxySettings = {
 	upstream_timeout_ms: number;
+	retry_max_retries: number;
 	stream_usage_mode: string;
 	stream_usage_max_bytes: number;
 	stream_usage_max_parsers: number;
@@ -228,6 +229,7 @@ export type SettingsForm = {
 	checkin_schedule_time: string;
 	model_failure_cooldown_minutes: string;
 	proxy_upstream_timeout_ms: string;
+	proxy_retry_max_retries: string;
 	proxy_stream_usage_mode: string;
 	proxy_stream_usage_max_bytes: string;
 	proxy_stream_usage_max_parsers: string;

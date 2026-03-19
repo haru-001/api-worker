@@ -20,6 +20,7 @@ const DEFAULT_CACHE_CHANNELS_TTL_SECONDS = 15;
 const DEFAULT_CACHE_CALL_TOKENS_TTL_SECONDS = 15;
 const DEFAULT_CACHE_SETTINGS_TTL_SECONDS = 30;
 const DEFAULT_PROXY_UPSTREAM_TIMEOUT_MS = 30000;
+const DEFAULT_PROXY_RETRY_MAX_RETRIES = 3;
 const DEFAULT_PROXY_USAGE_QUEUE_ENABLED = true;
 const DEFAULT_USAGE_QUEUE_DAILY_LIMIT = 10000;
 const DEFAULT_USAGE_QUEUE_DIRECT_WRITE_RATIO = 0.5;
@@ -46,6 +47,7 @@ const CACHE_VERSION_CHANNELS_KEY = "cache_v_channels";
 const CACHE_VERSION_CALL_TOKENS_KEY = "cache_v_call_tokens";
 const CACHE_VERSION_SETTINGS_KEY = "cache_v_settings";
 const PROXY_UPSTREAM_TIMEOUT_KEY = "proxy_upstream_timeout_ms";
+const PROXY_RETRY_MAX_RETRIES_KEY = "proxy_retry_max_retries";
 const PROXY_STREAM_USAGE_MODE_KEY = "proxy_stream_usage_mode";
 const PROXY_STREAM_USAGE_MAX_BYTES_KEY = "proxy_stream_usage_max_bytes";
 const PROXY_STREAM_USAGE_MAX_PARSERS_KEY = "proxy_stream_usage_max_parsers";
@@ -55,6 +57,7 @@ const USAGE_QUEUE_DIRECT_WRITE_RATIO_KEY = "usage_queue_direct_write_ratio";
 
 export type RuntimeProxyConfig = {
 	upstream_timeout_ms: number;
+	retry_max_retries: number;
 	stream_usage_mode: string;
 	stream_usage_max_bytes: number;
 	stream_usage_max_parsers: number;
@@ -67,6 +70,7 @@ export type RuntimeProxyConfig = {
 
 export type ProxyRuntimeSettings = {
 	upstream_timeout_ms: number;
+	retry_max_retries: number;
 	stream_usage_mode: string;
 	stream_usage_max_bytes: number;
 	stream_usage_max_parsers: number;
@@ -360,6 +364,10 @@ export async function getProxyRuntimeSettings(
 		settings[PROXY_UPSTREAM_TIMEOUT_KEY] ?? null,
 		DEFAULT_PROXY_UPSTREAM_TIMEOUT_MS,
 	);
+	const retryMaxRetries = parseNonNegativeSetting(
+		settings[PROXY_RETRY_MAX_RETRIES_KEY] ?? null,
+		DEFAULT_PROXY_RETRY_MAX_RETRIES,
+	);
 	const streamUsageMode = normalizeStreamUsageMode(
 		settings[PROXY_STREAM_USAGE_MODE_KEY],
 	);
@@ -385,6 +393,7 @@ export async function getProxyRuntimeSettings(
 	);
 	return {
 		upstream_timeout_ms: upstreamTimeout,
+		retry_max_retries: retryMaxRetries,
 		stream_usage_mode: streamUsageMode,
 		stream_usage_max_bytes: streamUsageMaxBytes,
 		stream_usage_max_parsers: streamUsageMaxParsers,
@@ -424,6 +433,15 @@ export async function setProxyRuntimeSettings(
 				db,
 				PROXY_UPSTREAM_TIMEOUT_KEY,
 				String(Math.max(0, Math.floor(update.upstream_timeout_ms))),
+			),
+		);
+	}
+	if (update.retry_max_retries !== undefined) {
+		tasks.push(
+			upsertSetting(
+				db,
+				PROXY_RETRY_MAX_RETRIES_KEY,
+				String(Math.max(0, Math.floor(update.retry_max_retries))),
 			),
 		);
 	}

@@ -118,6 +118,7 @@ settings.put("/", async (c) => {
 	} = {};
 	const runtimePatch: {
 		upstream_timeout_ms?: number;
+		retry_max_retries?: number;
 		stream_usage_mode?: string;
 		stream_usage_max_bytes?: number;
 		stream_usage_max_parsers?: number;
@@ -306,6 +307,24 @@ settings.put("/", async (c) => {
 			);
 		}
 		runtimePatch.upstream_timeout_ms = Math.floor(timeoutMs);
+		runtimeTouched = true;
+	}
+
+	if (body.proxy_retry_max_retries !== undefined) {
+		const retryMaxRetries = Number(body.proxy_retry_max_retries);
+		if (
+			Number.isNaN(retryMaxRetries) ||
+			retryMaxRetries < 0 ||
+			!Number.isInteger(retryMaxRetries)
+		) {
+			return jsonError(
+				c,
+				400,
+				"invalid_proxy_retry_max_retries",
+				"invalid_proxy_retry_max_retries",
+			);
+		}
+		runtimePatch.retry_max_retries = retryMaxRetries;
 		runtimeTouched = true;
 	}
 

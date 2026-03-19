@@ -667,6 +667,7 @@ const App = () => {
 			proxy_upstream_timeout_ms: String(
 				runtimeSettings?.upstream_timeout_ms ?? 30000,
 			),
+			proxy_retry_max_retries: String(runtimeSettings?.retry_max_retries ?? 3),
 			proxy_stream_usage_mode: runtimeSettings?.stream_usage_mode ?? "full",
 			proxy_stream_usage_max_bytes: String(
 				runtimeSettings?.stream_usage_max_bytes ?? 0,
@@ -1301,6 +1302,7 @@ const App = () => {
 				settingsForm.model_failure_cooldown_minutes,
 			);
 			const upstreamTimeoutMs = Number(settingsForm.proxy_upstream_timeout_ms);
+			const retryMaxRetries = Number(settingsForm.proxy_retry_max_retries);
 			const streamUsageMode = settingsForm.proxy_stream_usage_mode
 				.trim()
 				.toLowerCase();
@@ -1340,6 +1342,14 @@ const App = () => {
 			}
 			if (Number.isNaN(upstreamTimeoutMs) || upstreamTimeoutMs < 0) {
 				pushNotice("warning", "上游超时需为非负整数");
+				return;
+			}
+			if (
+				Number.isNaN(retryMaxRetries) ||
+				retryMaxRetries < 0 ||
+				!Number.isInteger(retryMaxRetries)
+			) {
+				pushNotice("warning", "重发次数需为非负整数");
 				return;
 			}
 			if (!["full", "lite", "off"].includes(streamUsageMode)) {
@@ -1393,6 +1403,7 @@ const App = () => {
 					settingsForm.checkin_schedule_time.trim() || "00:10",
 				model_failure_cooldown_minutes: failureCooldownMinutes,
 				proxy_upstream_timeout_ms: upstreamTimeoutMs,
+				proxy_retry_max_retries: retryMaxRetries,
 				proxy_stream_usage_mode: streamUsageMode,
 				proxy_stream_usage_max_bytes: streamUsageMaxBytes,
 				proxy_stream_usage_max_parsers: streamUsageMaxParsers,

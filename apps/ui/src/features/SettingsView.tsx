@@ -280,6 +280,31 @@ export const SettingsView = ({
 								}}
 							/>
 						</div>
+						<div class="app-settings-row">
+							<div class="app-settings-row__main">
+								<label class="app-settings-row__label" for="proxy-retry-max">
+									重发次数
+								</label>
+								<p class="app-settings-row__hint">
+									0 表示不重发，默认 3 次（跨渠道重发）。
+								</p>
+							</div>
+							<Input
+								class="app-settings-row__control app-settings-row__control--compact"
+								id="proxy-retry-max"
+								name="proxy_retry_max_retries"
+								type="number"
+								min="0"
+								step="1"
+								value={settingsForm.proxy_retry_max_retries}
+								onInput={(event) => {
+									const target = event.currentTarget as HTMLInputElement | null;
+									onFormChange({
+										proxy_retry_max_retries: target?.value ?? "",
+									});
+								}}
+							/>
+						</div>
 						<div class="app-settings-row app-settings-row--stack">
 							<div class="app-settings-row__main">
 								<span class="app-settings-row__label">流式 usage 解析模式</span>

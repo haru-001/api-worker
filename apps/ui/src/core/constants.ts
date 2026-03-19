@@ -52,6 +52,7 @@ export const initialSettingsForm: SettingsForm = {
 	checkin_schedule_time: "00:10",
 	model_failure_cooldown_minutes: "10",
 	proxy_upstream_timeout_ms: "30000",
+	proxy_retry_max_retries: "3",
 	proxy_stream_usage_mode: "full",
 	proxy_stream_usage_max_bytes: "0",
 	proxy_stream_usage_max_parsers: "0",
