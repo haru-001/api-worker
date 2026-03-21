@@ -89,8 +89,6 @@ export type RuntimeEvent = {
 	level: "info" | "warning" | "error";
 	code: string;
 	message: string;
-	request_id?: string | null;
-	session_id?: string | null;
 	request_path?: string | null;
 	method?: string | null;
 	channel_id?: string | null;
@@ -103,8 +101,6 @@ export type RuntimeEvent = {
 export type RuntimeEventQuery = {
 	levels: string[];
 	codes: string[];
-	request_id: string;
-	session_id: string;
 	path: string;
 	from: string;
 	to: string;

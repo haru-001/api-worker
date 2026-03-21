@@ -31,8 +31,6 @@ runtimeEvents.get("/", async (c) => {
 		to: query.to ? String(query.to) : null,
 		levels,
 		codes,
-		requestId: query.request_id ? String(query.request_id) : null,
-		sessionId: query.session_id ? String(query.session_id) : null,
 		path: query.path ? String(query.path) : null,
 		limit,
 		offset,

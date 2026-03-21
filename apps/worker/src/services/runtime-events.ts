@@ -12,8 +12,6 @@ export type RuntimeEventInput = {
 	level: RuntimeEventLevel;
 	code: string;
 	message: string;
-	requestId?: string | null;
-	sessionId?: string | null;
 	requestPath?: string | null;
 	method?: string | null;
 	channelId?: string | null;
@@ -28,8 +26,6 @@ export type RuntimeEventRecord = {
 	level: RuntimeEventLevel;
 	code: string;
 	message: string;
-	request_id: string | null;
-	session_id: string | null;
 	request_path: string | null;
 	method: string | null;
 	channel_id: string | null;
@@ -44,8 +40,6 @@ export type RuntimeEventListOptions = {
 	to?: string | null;
 	levels?: string[];
 	codes?: string[];
-	requestId?: string | null;
-	sessionId?: string | null;
 	path?: string | null;
 	limit?: number;
 	offset?: number;
@@ -215,15 +209,13 @@ export async function recordRuntimeEvent(
 	const contextJson = serializeContext(input.context ?? null, maxContextLength);
 	await db
 		.prepare(
-			"INSERT INTO runtime_events (id, level, code, message, request_id, session_id, request_path, method, channel_id, token_id, model, context_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+			"INSERT INTO runtime_events (id, level, code, message, request_path, method, channel_id, token_id, model, context_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 		)
 		.bind(
 			id,
 			input.level,
 			input.code,
 			input.message,
-			input.requestId ?? null,
-			input.sessionId ?? null,
 			input.requestPath ?? null,
 			input.method ?? null,
 			input.channelId ?? null,
@@ -248,8 +240,6 @@ export async function listRuntimeEvents(
 	const params: Array<string | number> = [];
 	const from = options.from?.trim();
 	const to = options.to?.trim();
-	const requestId = options.requestId?.trim();
-	const sessionId = options.sessionId?.trim();
 	const path = options.path?.trim();
 	const levels =
 		options.levels?.map((item) => item.trim()).filter(Boolean) ?? [];
@@ -264,14 +254,6 @@ export async function listRuntimeEvents(
 	if (to) {
 		filters.push("created_at <= ?");
 		params.push(to);
-	}
-	if (requestId) {
-		filters.push("request_id = ?");
-		params.push(requestId);
-	}
-	if (sessionId) {
-		filters.push("session_id = ?");
-		params.push(sessionId);
 	}
 	if (path) {
 		filters.push("request_path LIKE ?");

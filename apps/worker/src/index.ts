@@ -93,9 +93,6 @@ app.onError(async (err, c) => {
 			level: "error",
 			code: "app_unhandled_error",
 			message: err.message || "app_unhandled_error",
-			requestId:
-				c.req.header("cf-ray") ?? c.req.header("x-client-request-id") ?? null,
-			sessionId: c.req.header("session_id") ?? null,
 			requestPath: c.req.path,
 			method: c.req.method,
 			context: {

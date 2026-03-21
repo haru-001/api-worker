@@ -132,8 +132,6 @@ const initialUsageQuery: UsageQuery = {
 const initialRuntimeEventQuery: RuntimeEventQuery = {
 	levels: [],
 	codes: [],
-	request_id: "",
-	session_id: "",
 	path: "",
 	from: "",
 	to: "",
@@ -623,8 +621,6 @@ const App = () => {
 			const codes = query.codes.filter(Boolean);
 			const from = query.from.trim();
 			const to = query.to.trim();
-			const requestId = query.request_id.trim();
-			const sessionId = query.session_id.trim();
 			const path = query.path.trim();
 			if (from) {
 				params.set("from", `${from} 00:00:00`);
@@ -637,12 +633,6 @@ const App = () => {
 			}
 			if (codes.length > 0) {
 				params.set("codes", codes.join(","));
-			}
-			if (requestId) {
-				params.set("request_id", requestId);
-			}
-			if (sessionId) {
-				params.set("session_id", sessionId);
 			}
 			if (path) {
 				params.set("path", path);
@@ -1062,8 +1052,6 @@ const App = () => {
 		const nextQuery = {
 			levels: runtimeEventFilters.levels.filter(Boolean),
 			codes: runtimeEventFilters.codes.filter(Boolean),
-			request_id: runtimeEventFilters.request_id.trim(),
-			session_id: runtimeEventFilters.session_id.trim(),
 			path: runtimeEventFilters.path.trim(),
 			from: runtimeEventFilters.from.trim(),
 			to: runtimeEventFilters.to.trim(),
@@ -1088,8 +1076,6 @@ const App = () => {
 		runtimeEventFilters.from,
 		runtimeEventFilters.levels,
 		runtimeEventFilters.path,
-		runtimeEventFilters.request_id,
-		runtimeEventFilters.session_id,
 		runtimeEventFilters.to,
 		startAction,
 	]);

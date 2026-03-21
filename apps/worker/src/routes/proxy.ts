@@ -237,8 +237,6 @@ function createUsageEventScheduler(
 		usage_reserve_breaker_ms: number;
 	},
 	diagnostics: {
-		requestId?: string | null;
-		sessionId?: string | null;
 		requestPath?: string | null;
 		method?: string | null;
 		tokenId?: string | null;
@@ -271,8 +269,6 @@ function createUsageEventScheduler(
 			level,
 			code,
 			message,
-			requestId: diagnostics.requestId ?? null,
-			sessionId: diagnostics.sessionId ?? null,
 			requestPath:
 				(typeof context.requestPath === "string" && context.requestPath) ||
 				diagnostics.requestPath ||
@@ -661,9 +657,6 @@ async function fetchWithTimeout(
 proxy.all("/*", tokenAuth, async (c) => {
 	const tokenRecord = c.get("tokenRecord") as TokenRecord;
 	const requestStart = Date.now();
-	const requestId =
-		c.req.header("cf-ray") ?? c.req.header("x-client-request-id") ?? null;
-	const sessionId = c.req.header("session_id") ?? null;
 	const [cacheConfig, runtimeSettings] = await Promise.all([
 		getCacheConfig(c.env.DB, c.env.CACHE_VERSION_STORE),
 		getProxyRuntimeSettings(c.env.DB),
@@ -697,8 +690,6 @@ proxy.all("/*", tokenAuth, async (c) => {
 				level,
 				code,
 				message,
-				requestId,
-				sessionId,
 				requestPath: c.req.path,
 				method: c.req.method,
 				tokenId: tokenRecord.id,
@@ -708,8 +699,6 @@ proxy.all("/*", tokenAuth, async (c) => {
 		);
 	};
 	const scheduleUsageEvent = createUsageEventScheduler(c, runtimeSettings, {
-		requestId,
-		sessionId,
 		requestPath: c.req.path,
 		method: c.req.method,
 		tokenId: tokenRecord.id,

@@ -105,8 +105,6 @@ export const RuntimeEventsView = ({
 	const hasFilters =
 		filters.levels.length > 0 ||
 		filters.codes.length > 0 ||
-		filters.request_id.trim() ||
-		filters.session_id.trim() ||
 		filters.path.trim() ||
 		filters.from.trim() ||
 		filters.to.trim();
@@ -203,43 +201,7 @@ export const RuntimeEventsView = ({
 								onChange={(next) => onFiltersChange({ codes: next })}
 							/>
 						</div>
-						<div>
-							<label
-								class="mb-1.5 block text-xs uppercase tracking-widest text-[color:var(--app-ink-muted)]"
-								for="runtime-request-id"
-							>
-								Request ID
-							</label>
-							<Input
-								id="runtime-request-id"
-								value={filters.request_id}
-								placeholder="输入 request_id"
-								onInput={(event) =>
-									onFiltersChange({
-										request_id: (event.currentTarget as HTMLInputElement).value,
-									})
-								}
-							/>
-						</div>
-						<div>
-							<label
-								class="mb-1.5 block text-xs uppercase tracking-widest text-[color:var(--app-ink-muted)]"
-								for="runtime-session-id"
-							>
-								Session ID
-							</label>
-							<Input
-								id="runtime-session-id"
-								value={filters.session_id}
-								placeholder="输入 session_id"
-								onInput={(event) =>
-									onFiltersChange({
-										session_id: (event.currentTarget as HTMLInputElement).value,
-									})
-								}
-							/>
-						</div>
-						<div class="sm:col-span-2 lg:col-span-3">
+						<div class="sm:col-span-2 lg:col-span-2">
 							<label
 								class="mb-1.5 block text-xs uppercase tracking-widest text-[color:var(--app-ink-muted)]"
 								for="runtime-path"
@@ -300,9 +262,6 @@ export const RuntimeEventsView = ({
 										路径
 									</th>
 									<th class="sticky top-0 bg-[color:var(--app-surface-strong)]/95">
-										Request ID
-									</th>
-									<th class="sticky top-0 bg-[color:var(--app-surface-strong)]/95">
 										摘要
 									</th>
 								</tr>
@@ -311,7 +270,7 @@ export const RuntimeEventsView = ({
 								{showSkeleton ? (
 									Array.from({ length: 6 }).map((_, rowIndex) => (
 										<tr key={`runtime-skeleton-${rowIndex}`}>
-											{Array.from({ length: 6 }).map((__, cellIndex) => (
+											{Array.from({ length: 5 }).map((__, cellIndex) => (
 												<td
 													class="px-3 py-2.5"
 													key={`runtime-cell-${cellIndex}`}
@@ -325,7 +284,7 @@ export const RuntimeEventsView = ({
 									<tr>
 										<td
 											class="px-3 py-10 text-center text-sm text-[color:var(--app-ink-muted)]"
-											colSpan={6}
+											colSpan={5}
 										>
 											暂无系统日志，先执行一次请求吧。
 										</td>
@@ -349,9 +308,6 @@ export const RuntimeEventsView = ({
 											</td>
 											<td class="px-3 py-2.5 text-left text-xs text-[color:var(--app-ink)] sm:text-sm">
 												{event.request_path ?? "-"}
-											</td>
-											<td class="px-3 py-2.5 text-left text-xs text-[color:var(--app-ink)] sm:text-sm">
-												{event.request_id ?? "-"}
 											</td>
 											<td class="px-3 py-2.5 text-left text-xs text-[color:var(--app-ink)] sm:text-sm">
 												<button
@@ -441,18 +397,6 @@ export const RuntimeEventsView = ({
 								<div class="flex items-center justify-between gap-3">
 									<span class="text-[color:var(--app-ink-muted)]">路径</span>
 									<span>{activeEvent.request_path ?? "-"}</span>
-								</div>
-								<div class="flex items-center justify-between gap-3">
-									<span class="text-[color:var(--app-ink-muted)]">
-										Request ID
-									</span>
-									<span>{activeEvent.request_id ?? "-"}</span>
-								</div>
-								<div class="flex items-center justify-between gap-3">
-									<span class="text-[color:var(--app-ink-muted)]">
-										Session ID
-									</span>
-									<span>{activeEvent.session_id ?? "-"}</span>
 								</div>
 							</div>
 						</Card>
