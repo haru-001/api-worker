@@ -2072,11 +2072,14 @@ proxy.all("/*", tokenAuth, async (c) => {
 			.bind("active")
 			.all<ChannelRecord>();
 		activeChannelRows = (activeChannels.results ?? []) as ChannelRecord[];
-		void writeHotJson(
-			c.env.KV_HOT,
-			activeChannelsCacheKey,
-			activeChannelRows,
-			HOT_KV_ACTIVE_CHANNELS_TTL_SECONDS,
+		scheduleDbWrite(
+			c,
+			writeHotJson(
+				c.env.KV_HOT,
+				activeChannelsCacheKey,
+				activeChannelRows,
+				HOT_KV_ACTIVE_CHANNELS_TTL_SECONDS,
+			),
 		);
 	}
 	const channelIds = activeChannelRows.map((channel) => channel.id);
@@ -2106,11 +2109,14 @@ proxy.all("/*", tokenAuth, async (c) => {
 		callTokenRows = await listCallTokens(db, {
 			channelIds,
 		});
-		void writeHotJson(
-			c.env.KV_HOT,
-			callTokensCacheKey,
-			callTokenRows,
-			HOT_KV_CALL_TOKENS_TTL_SECONDS,
+		scheduleDbWrite(
+			c,
+			writeHotJson(
+				c.env.KV_HOT,
+				callTokensCacheKey,
+				callTokenRows,
+				HOT_KV_CALL_TOKENS_TTL_SECONDS,
+			),
 		);
 	}
 	const callTokenMap = new Map<string, CallTokenItem[]>();
@@ -2403,11 +2409,14 @@ proxy.all("/*", tokenAuth, async (c) => {
 			supported,
 			updatedAt: new Date().toISOString(),
 		};
-		void writeHotJson(
-			c.env.KV_HOT,
-			key,
-			record,
-			streamOptionsCapabilityTtlSeconds,
+		scheduleDbWrite(
+			c,
+			writeHotJson(
+				c.env.KV_HOT,
+				key,
+				record,
+				streamOptionsCapabilityTtlSeconds,
+			),
 		);
 	};
 	for (const channel of ordered) {
