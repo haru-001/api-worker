@@ -261,6 +261,244 @@ function hasAssistantToolCallHint(
 	return false;
 }
 
+type ToolCallChainRepairReport = {
+	patchedAssistantCalls: number;
+	droppedToolMessages: number;
+	droppedFunctionOutputs: number;
+	droppedToolMessageIndexes: number[];
+	droppedFunctionOutputIndexes: number[];
+};
+
+function emptyToolCallChainRepairReport(): ToolCallChainRepairReport {
+	return {
+		patchedAssistantCalls: 0,
+		droppedToolMessages: 0,
+		droppedFunctionOutputs: 0,
+		droppedToolMessageIndexes: [],
+		droppedFunctionOutputIndexes: [],
+	};
+}
+
+function collectAssistantToolCallIds(
+	message: Record<string, unknown>,
+): string[] {
+	const ids: string[] = [];
+	const toolCalls = Array.isArray(message.tool_calls)
+		? message.tool_calls
+		: Array.isArray(message.toolCalls)
+			? message.toolCalls
+			: [];
+	for (const call of toolCalls) {
+		if (!call || typeof call !== "object" || Array.isArray(call)) {
+			continue;
+		}
+		const record = call as Record<string, unknown>;
+		const id = normalizeStringField(record.id ?? record.call_id ?? record.callId);
+		if (id) {
+			ids.push(id);
+		}
+	}
+	const functionCall =
+		message.function_call &&
+		typeof message.function_call === "object" &&
+		!Array.isArray(message.function_call)
+			? (message.function_call as Record<string, unknown>)
+			: message.functionCall &&
+				  typeof message.functionCall === "object" &&
+				  !Array.isArray(message.functionCall)
+				? (message.functionCall as Record<string, unknown>)
+				: null;
+	if (functionCall) {
+		const id = normalizeStringField(
+			functionCall.id ?? functionCall.call_id ?? functionCall.callId,
+		);
+		if (id) {
+			ids.push(id);
+		}
+	}
+	return ids;
+}
+
+function patchNearestAssistantCallId(
+	messages: Array<Record<string, unknown>>,
+	toolCallId: string,
+): boolean {
+	for (let index = messages.length - 1; index >= 0; index -= 1) {
+		const candidate = messages[index];
+		const role = normalizeStringField(candidate.role)?.toLowerCase();
+		if (role !== "assistant") {
+			continue;
+		}
+		const toolCalls = Array.isArray(candidate.tool_calls)
+			? candidate.tool_calls
+			: Array.isArray(candidate.toolCalls)
+				? candidate.toolCalls
+				: [];
+		const missingCalls = toolCalls.filter((call) => {
+			if (!call || typeof call !== "object" || Array.isArray(call)) {
+				return false;
+			}
+			const record = call as Record<string, unknown>;
+			return !normalizeStringField(record.id ?? record.call_id ?? record.callId);
+		});
+		if (missingCalls.length === 1) {
+			const missingRecord = missingCalls[0] as Record<string, unknown>;
+			missingRecord.id = toolCallId;
+			return true;
+		}
+		const functionCall =
+			candidate.function_call &&
+			typeof candidate.function_call === "object" &&
+			!Array.isArray(candidate.function_call)
+				? (candidate.function_call as Record<string, unknown>)
+				: candidate.functionCall &&
+					  typeof candidate.functionCall === "object" &&
+					  !Array.isArray(candidate.functionCall)
+					? (candidate.functionCall as Record<string, unknown>)
+					: null;
+		if (functionCall) {
+			const hasId = normalizeStringField(
+				functionCall.id ?? functionCall.call_id ?? functionCall.callId,
+			);
+			if (!hasId) {
+				functionCall.call_id = toolCallId;
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+function repairOpenAiChatToolCallChain(
+	body: Record<string, unknown> | null,
+	report: ToolCallChainRepairReport,
+): void {
+	if (!body || !Array.isArray(body.messages)) {
+		return;
+	}
+	const repairedMessages: Array<Record<string, unknown>> = [];
+	const seenIds = new Set<string>();
+	for (let index = 0; index < body.messages.length; index += 1) {
+		const rawMessage = body.messages[index];
+		if (
+			!rawMessage ||
+			typeof rawMessage !== "object" ||
+			Array.isArray(rawMessage)
+		) {
+			continue;
+		}
+		const message = rawMessage as Record<string, unknown>;
+		const role = normalizeStringField(message.role)?.toLowerCase();
+		if (role === "assistant") {
+			for (const id of collectAssistantToolCallIds(message)) {
+				seenIds.add(id);
+			}
+			repairedMessages.push(message);
+			continue;
+		}
+		if (role !== "tool") {
+			repairedMessages.push(message);
+			continue;
+		}
+		const toolCallId = normalizeStringField(
+			message.tool_call_id ??
+				message.toolCallId ??
+				message.call_id ??
+				message.callId,
+		);
+		if (!toolCallId) {
+			report.droppedToolMessages += 1;
+			report.droppedToolMessageIndexes.push(index);
+			continue;
+		}
+		if (!seenIds.has(toolCallId)) {
+			const patched = patchNearestAssistantCallId(repairedMessages, toolCallId);
+			if (patched) {
+				report.patchedAssistantCalls += 1;
+				seenIds.add(toolCallId);
+			}
+		}
+		if (!seenIds.has(toolCallId)) {
+			report.droppedToolMessages += 1;
+			report.droppedToolMessageIndexes.push(index);
+			continue;
+		}
+		repairedMessages.push(message);
+	}
+	body.messages = repairedMessages;
+}
+
+function repairOpenAiResponsesToolCallChain(
+	body: Record<string, unknown> | null,
+	report: ToolCallChainRepairReport,
+): void {
+	if (!body || !Array.isArray(body.input)) {
+		return;
+	}
+	const seenFunctionCallIds = new Set<string>();
+	const pendingWithoutId: Array<Record<string, unknown>> = [];
+	const repairedInput: Array<unknown> = [];
+	for (let index = 0; index < body.input.length; index += 1) {
+		const rawItem = body.input[index];
+		if (!rawItem || typeof rawItem !== "object" || Array.isArray(rawItem)) {
+			repairedInput.push(rawItem);
+			continue;
+		}
+		const item = rawItem as Record<string, unknown>;
+		const itemType = normalizeStringField(item.type)?.toLowerCase();
+		if (itemType === "function_call") {
+			const callId = normalizeStringField(item.call_id ?? item.callId ?? item.id);
+			if (callId) {
+				seenFunctionCallIds.add(callId);
+			} else {
+				pendingWithoutId.push(item);
+			}
+			repairedInput.push(item);
+			continue;
+		}
+		if (itemType !== "function_call_output") {
+			repairedInput.push(item);
+			continue;
+		}
+		const outputCallId = normalizeStringField(
+			item.call_id ?? item.callId ?? item.tool_call_id ?? item.toolCallId,
+		);
+		if (!outputCallId) {
+			report.droppedFunctionOutputs += 1;
+			report.droppedFunctionOutputIndexes.push(index);
+			continue;
+		}
+		if (!seenFunctionCallIds.has(outputCallId) && pendingWithoutId.length > 0) {
+			const candidate = pendingWithoutId.pop() as Record<string, unknown>;
+			candidate.call_id = outputCallId;
+			seenFunctionCallIds.add(outputCallId);
+			report.patchedAssistantCalls += 1;
+		}
+		if (!seenFunctionCallIds.has(outputCallId)) {
+			report.droppedFunctionOutputs += 1;
+			report.droppedFunctionOutputIndexes.push(index);
+			continue;
+		}
+		repairedInput.push(item);
+	}
+	body.input = repairedInput;
+}
+
+function repairOpenAiToolCallChain(
+	body: Record<string, unknown> | null,
+	endpointType: EndpointType,
+): ToolCallChainRepairReport {
+	const report = emptyToolCallChainRepairReport();
+	if (!body) {
+		return report;
+	}
+	repairOpenAiChatToolCallChain(body, report);
+	if (endpointType === "responses") {
+		repairOpenAiResponsesToolCallChain(body, report);
+	}
+	return report;
+}
+
 type ToolCallChainValidationIssue = {
 	code: "tool_call_chain_invalid_local";
 	message: string;
@@ -1553,11 +1791,18 @@ proxy.all("/*", tokenAuth, async (c) => {
 		getProxyRuntimeSettings(db),
 	]);
 	const requestText = await c.req.text();
-	const parsedBody = requestText
+	let parsedBody = requestText
 		? safeJsonParse<Record<string, unknown> | null>(requestText, null)
 		: null;
 	const downstreamProvider = detectDownstreamProvider(c.req.path);
 	const endpointType = detectEndpointType(downstreamProvider, c.req.path);
+	const toolCallChainRepair =
+		downstreamProvider === "openai"
+			? repairOpenAiToolCallChain(parsedBody, endpointType)
+			: emptyToolCallChainRepairReport();
+	const effectiveRequestText = parsedBody
+		? JSON.stringify(parsedBody)
+		: requestText;
 	const downstreamModel = parseDownstreamModel(
 		downstreamProvider,
 		c.req.path,
@@ -1603,6 +1848,27 @@ proxy.all("/*", tokenAuth, async (c) => {
 		model: downstreamModel,
 		requestSeed: String(requestStart),
 	});
+	if (
+		toolCallChainRepair.patchedAssistantCalls > 0 ||
+		toolCallChainRepair.droppedToolMessages > 0 ||
+		toolCallChainRepair.droppedFunctionOutputs > 0
+	) {
+		scheduleRuntimeEvent(
+			"warning",
+			"tool_call_chain_repaired_local",
+			"tool_call_chain_repaired_local",
+			{
+				endpoint_type: endpointType,
+				patched_assistant_calls: toolCallChainRepair.patchedAssistantCalls,
+				dropped_tool_messages: toolCallChainRepair.droppedToolMessages,
+				dropped_function_outputs: toolCallChainRepair.droppedFunctionOutputs,
+				dropped_tool_message_indexes:
+					toolCallChainRepair.droppedToolMessageIndexes,
+				dropped_function_output_indexes:
+					toolCallChainRepair.droppedFunctionOutputIndexes,
+			},
+		);
+	}
 	let normalizedChat: NormalizedChatRequest | null = null;
 	let normalizedEmbedding: NormalizedEmbeddingRequest | null = null;
 	let normalizedImage: NormalizedImageRequest | null = null;
@@ -2153,7 +2419,7 @@ proxy.all("/*", tokenAuth, async (c) => {
 		headers.delete("content-length");
 		let upstreamRequestPath = targetPath;
 		let upstreamFallbackPath: string | undefined;
-		let upstreamBodyText = requestText || undefined;
+		let upstreamBodyText = effectiveRequestText || undefined;
 		let absoluteUrl: string | undefined;
 		const sameProvider = upstreamProvider === downstreamProvider;
 		if (endpointType === "passthrough") {
