@@ -2,7 +2,8 @@
 
 Cloudflare Workers + D1 的 API 网关与管理台一体化项目。
 
-- 后端：`apps/worker`（Hono + Worker + D1 + Queue + Durable Objects）
+- 后端编排：`apps/worker`（主 Worker，负责鉴权、路由、重试编排）
+- 后端执行：`apps/attempt-worker`（调用执行器 Worker，负责单次上游调用）
 - 前端：`apps/ui`（Vite 管理控制台）
 - 部署：Worker 静态资源模式，`apps/ui/dist` 与 Worker 一起发布
 
@@ -32,7 +33,7 @@ Cloudflare Workers + D1 的 API 网关与管理台一体化项目。
 
 触发方式：
 
-- `push` 到 `main/master` 且命中 `apps/ui/**` 或 `apps/worker/**`
+- `push` 到 `main/master` 且命中 `apps/ui/**`、`apps/worker/**` 或 `apps/attempt-worker/**`
 - `workflow_dispatch` 手动触发
 - `repository_dispatch`（`deploy-spa-button`）
 
@@ -86,9 +87,10 @@ bun run deploy:update
 │  │  ├─ migrations/
 │  │  ├─ wasm/
 │  │  └─ wrangler.toml
+│  ├─ attempt-worker/       # 调用执行器（单次上游调用）
 │  └─ ui/                   # 管理台（Vite）
 ├─ scripts/
-│  ├─ dev.mjs               # 本地并行启动 worker + ui
+│  ├─ dev.mjs               # 本地并行启动 worker + attempt-worker + ui
 │  └─ deploy.mjs            # 本地部署流程脚本（构建 + 本地迁移）
 ├─ package.json
 └─ README.md
@@ -119,6 +121,7 @@ bun run dev
 或分别启动：
 
 ```bash
+bun run dev:attempt-worker
 bun run dev:worker
 bun run dev:ui
 ```
@@ -126,6 +129,7 @@ bun run dev:ui
 默认端口：
 
 - Worker: `8787`（wrangler dev 默认）
+- Attempt Worker: `8788`
 - UI: `4173`
 
 ### 4) 首次本地迁移（推荐）
@@ -144,12 +148,7 @@ bun run format
 bun run check
 ```
 
-## 配置说明
-
-- 代理运行时参数（超时、重试、usage 解析、队列开关等）当前以 D1 `settings` 表为准，通过管理台“系统设置”或 `PUT /api/settings` 维护。
-- 若未设置，会使用代码默认值（见 `apps/worker/src/services/settings.ts` 常量）。
-
-### Worker 绑定与运行配置
+## Worker 绑定与运行配置
 
 关键配置位于 `apps/worker/wrangler.toml`：
 
@@ -158,6 +157,7 @@ bun run check
 - Static Assets: `ASSETS`（目录 `../ui/dist`）
 - Queue: `USAGE_QUEUE`（`usage-events`）
 - Durable Objects: `CHECKIN_SCHEDULER`, `USAGE_LIMITER`
+- Service Binding: `ATTEMPT_WORKER`（绑定到 `attempt-worker`）
 - 可选环境绑定：`CORS_ORIGIN`（用于限制管理台跨域来源）
 
 注意：
