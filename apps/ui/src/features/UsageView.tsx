@@ -81,6 +81,25 @@ const formatErrorMeta = (value: string | null | undefined): string | null => {
 	}
 };
 
+const formatChannelLabel = (log: UsageLog): string => {
+	if (log.channel_name) {
+		return log.channel_name;
+	}
+	if (log.channel_id) {
+		return log.channel_id;
+	}
+	if (
+		log.failure_stage === "request" &&
+		log.error_code === "responses_tool_call_chain_mismatch"
+	) {
+		return "聚合结果";
+	}
+	if (log.failure_stage === "request" || log.failure_stage === "request_validation") {
+		return "请求级";
+	}
+	return "-";
+};
+
 /**
  * Renders the usage logs view.
  *
@@ -497,7 +516,7 @@ export const UsageView = ({
 												)}
 												{visibleColumnSet.has("channel") && (
 													<td class="px-3 py-2.5 text-left text-xs text-[color:var(--app-ink)] sm:text-sm">
-														{log.channel_name ?? log.channel_id ?? "-"}
+														{formatChannelLabel(log)}
 													</td>
 												)}
 												{visibleColumnSet.has("token") && (
@@ -648,11 +667,7 @@ export const UsageView = ({
 								</div>
 								<div class="flex items-center justify-between gap-3">
 									<span class="text-[color:var(--app-ink-muted)]">渠道</span>
-									<span>
-										{activeErrorLog.channel_name ??
-											activeErrorLog.channel_id ??
-											"-"}
-									</span>
+									<span>{formatChannelLabel(activeErrorLog)}</span>
 								</div>
 								<div class="flex items-center justify-between gap-3">
 									<span class="text-[color:var(--app-ink-muted)]">令牌</span>

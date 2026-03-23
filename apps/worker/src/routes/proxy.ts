@@ -226,6 +226,182 @@ function hasChatToolOutputHint(
 	return false;
 }
 
+type ToolCallChainValidationIssue = {
+	code: "tool_call_chain_invalid_local";
+	message: string;
+	errorMetaJson: string;
+};
+
+function validateOpenAiChatToolCallChain(
+	body: Record<string, unknown> | null,
+): ToolCallChainValidationIssue | null {
+	if (!body || !Array.isArray(body.messages)) {
+		return null;
+	}
+	const seenToolCallIds = new Set<string>();
+	const missingRefs: Array<{ id: string; index: number }> = [];
+	const missingIdIndexes: number[] = [];
+	for (let index = 0; index < body.messages.length; index += 1) {
+		const rawMessage = body.messages[index];
+		if (
+			!rawMessage ||
+			typeof rawMessage !== "object" ||
+			Array.isArray(rawMessage)
+		) {
+			continue;
+		}
+		const message = rawMessage as Record<string, unknown>;
+		const role = normalizeStringField(message.role)?.toLowerCase();
+		if (role === "assistant") {
+			const toolCalls = Array.isArray(message.tool_calls)
+				? message.tool_calls
+				: [];
+			for (const call of toolCalls) {
+				if (!call || typeof call !== "object" || Array.isArray(call)) {
+					continue;
+				}
+				const callRecord = call as Record<string, unknown>;
+				const callId = normalizeStringField(
+					callRecord.id ?? callRecord.call_id,
+				);
+				if (callId) {
+					seenToolCallIds.add(callId);
+				}
+			}
+			const legacyFunctionCall =
+				message.function_call &&
+				typeof message.function_call === "object" &&
+				!Array.isArray(message.function_call)
+					? (message.function_call as Record<string, unknown>)
+					: null;
+			const legacyCallId = normalizeStringField(
+				legacyFunctionCall?.id ?? legacyFunctionCall?.call_id,
+			);
+			if (legacyCallId) {
+				seenToolCallIds.add(legacyCallId);
+			}
+			continue;
+		}
+		if (role !== "tool") {
+			continue;
+		}
+		const toolCallId = normalizeStringField(
+			message.tool_call_id ?? message.toolCallId ?? message.call_id,
+		);
+		if (!toolCallId) {
+			missingIdIndexes.push(index);
+			continue;
+		}
+		if (!seenToolCallIds.has(toolCallId)) {
+			missingRefs.push({ id: toolCallId, index });
+		}
+	}
+	if (missingRefs.length === 0 && missingIdIndexes.length === 0) {
+		return null;
+	}
+	const missingIds = Array.from(new Set(missingRefs.map((item) => item.id)));
+	const message = [
+		"tool_call_chain_invalid_local: chat_messages contain tool output without matching assistant tool_calls",
+		`missing_ids=${missingIds.length > 0 ? missingIds.join(",") : "-"}`,
+		`missing_id_message_indexes=${missingIdIndexes.length > 0 ? missingIdIndexes.join(",") : "-"}`,
+		`unmatched_message_indexes=${missingRefs.length > 0 ? missingRefs.map((item) => item.index).join(",") : "-"}`,
+	].join(", ");
+	return {
+		code: "tool_call_chain_invalid_local",
+		message,
+		errorMetaJson: JSON.stringify({
+			type: "local_validation",
+			source: "chat_messages",
+			status: 409,
+			missing_ids: missingIds,
+			missing_id_message_indexes: missingIdIndexes,
+			unmatched_message_indexes: missingRefs.map((item) => item.index),
+		}),
+	};
+}
+
+function validateOpenAiResponsesToolCallChain(
+	body: Record<string, unknown> | null,
+	previousResponseId: string | null,
+): ToolCallChainValidationIssue | null {
+	if (!body || previousResponseId) {
+		return null;
+	}
+	const rawInput = body.input;
+	const inputItems = Array.isArray(rawInput)
+		? rawInput
+		: rawInput
+			? [rawInput]
+			: [];
+	if (inputItems.length === 0) {
+		return null;
+	}
+	const seenFunctionCallIds = new Set<string>();
+	const missingOutputs: Array<{ id: string; index: number }> = [];
+	for (let index = 0; index < inputItems.length; index += 1) {
+		const rawItem = inputItems[index];
+		if (!rawItem || typeof rawItem !== "object" || Array.isArray(rawItem)) {
+			continue;
+		}
+		const item = rawItem as Record<string, unknown>;
+		const itemType = normalizeStringField(item.type)?.toLowerCase();
+		if (itemType === "function_call") {
+			const callId = normalizeStringField(item.call_id ?? item.id);
+			if (callId) {
+				seenFunctionCallIds.add(callId);
+			}
+			continue;
+		}
+		if (itemType !== "function_call_output") {
+			continue;
+		}
+		const outputCallId = normalizeStringField(
+			item.call_id ?? item.tool_call_id ?? item.toolCallId,
+		);
+		if (!outputCallId || seenFunctionCallIds.has(outputCallId)) {
+			continue;
+		}
+		missingOutputs.push({ id: outputCallId, index });
+	}
+	if (missingOutputs.length === 0) {
+		return null;
+	}
+	const missingIds = Array.from(new Set(missingOutputs.map((item) => item.id)));
+	const message = [
+		"tool_call_chain_invalid_local: responses input contains function_call_output without previous_response_id or in-request function_call",
+		`missing_ids=${missingIds.join(",")}`,
+		`unmatched_item_indexes=${missingOutputs.map((item) => item.index).join(",")}`,
+	].join(", ");
+	return {
+		code: "tool_call_chain_invalid_local",
+		message,
+		errorMetaJson: JSON.stringify({
+			type: "local_validation",
+			source: "responses_input",
+			status: 409,
+			missing_ids: missingIds,
+			unmatched_item_indexes: missingOutputs.map((item) => item.index),
+		}),
+	};
+}
+
+function validateOpenAiToolCallChain(
+	body: Record<string, unknown> | null,
+	endpointType: EndpointType,
+	hints: ResponsesRequestHints | null,
+): ToolCallChainValidationIssue | null {
+	if (endpointType === "chat") {
+		return validateOpenAiChatToolCallChain(body);
+	}
+	if (endpointType === "responses") {
+		return validateOpenAiResponsesToolCallChain(
+			body,
+			hints?.previousResponseId ?? null,
+		);
+	}
+	return null;
+}
+
 function isResponsesToolCallNotFoundMessage(message: string | null): boolean {
 	const normalized = normalizeMessage(message)?.toLowerCase();
 	if (!normalized) {
@@ -1450,6 +1626,38 @@ proxy.all("/*", tokenAuth, async (c) => {
 			errorMetaJson: toolSchemaIssue.errorMetaJson,
 		});
 		return jsonErrorWithTrace(400, toolSchemaIssue.message, toolSchemaIssue.code);
+	}
+	if (downstreamProvider === "openai") {
+		const toolCallChainIssue = validateOpenAiToolCallChain(
+			parsedBody,
+			endpointType,
+			responsesRequestHints,
+		);
+		if (toolCallChainIssue) {
+			scheduleRuntimeEvent(
+				"warning",
+				"tool_call_chain_invalid_local_precheck",
+				"tool_call_chain_invalid_local_precheck",
+				{
+					endpoint_type: endpointType,
+					error: toolCallChainIssue.message,
+				},
+			);
+			recordEarlyUsage({
+				status: 409,
+				code: toolCallChainIssue.code,
+				message: toolCallChainIssue.message,
+				failureStage: "request_validation",
+				failureReason: toolCallChainIssue.code,
+				usageSource: "none",
+				errorMetaJson: toolCallChainIssue.errorMetaJson,
+			});
+			return jsonErrorWithTrace(
+				409,
+				toolCallChainIssue.code,
+				toolCallChainIssue.code,
+			);
+		}
 	}
 
 	const activeChannelsCacheKey = buildActiveChannelsKey(

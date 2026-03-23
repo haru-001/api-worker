@@ -161,7 +161,7 @@ export function resetRuntimeEventLevelSnapshot(): void {
 
 function serializeContext(
 	context: Record<string, unknown> | null | undefined,
-	maxContextLength: number,
+	_maxContextLength: number,
 ): string | null {
 	if (!context) {
 		return null;
@@ -171,11 +171,7 @@ function serializeContext(
 		if (!raw) {
 			return null;
 		}
-		const safeMaxLength = Math.max(0, Math.floor(maxContextLength));
-		if (safeMaxLength === 0 || raw.length <= safeMaxLength) {
-			return raw;
-		}
-		return `${raw.slice(0, safeMaxLength - 1)}…`;
+		return raw;
 	} catch {
 		return null;
 	}
