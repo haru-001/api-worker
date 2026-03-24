@@ -1,13 +1,14 @@
 import { Hono } from "hono";
 import type { AppEnv } from "../env";
-import { getCheckinSchedulerStub, shouldResetLastRun } from "../services/checkin-scheduler";
+import {
+	getCheckinSchedulerStub,
+	shouldResetLastRun,
+} from "../services/checkin-scheduler";
 import {
 	getCheckinScheduleTime,
 	getProxyRuntimeSettings,
 	getRetentionDays,
 	getRuntimeProxyConfig,
-	LARGE_REQUEST_OFFLOAD_ENDPOINT_OPTIONS,
-	type LargeRequestOffloadEndpoint,
 	getSessionTtlHours,
 	isAdminPasswordSet,
 	setAdminPasswordHash,
@@ -16,7 +17,10 @@ import {
 	setRetentionDays,
 	setSessionTtlHours,
 } from "../services/settings";
-import { getUsageLimiterStub, getUsageQueueStatus } from "../services/usage-limiter";
+import {
+	getUsageLimiterStub,
+	getUsageQueueStatus,
+} from "../services/usage-limiter";
 import { sha256Hex } from "../utils/crypto";
 import { jsonError } from "../utils/http";
 
@@ -84,7 +88,9 @@ settings.get("/", async (c) => {
 			);
 			const effectiveTotal = status.enqueue_success_count + status.direct_count;
 			const effectiveQueueRatio =
-				effectiveTotal > 0 ? status.enqueue_success_count / effectiveTotal : null;
+				effectiveTotal > 0
+					? status.enqueue_success_count / effectiveTotal
+					: null;
 			const effectiveDirectRatio =
 				effectiveTotal > 0 ? status.direct_count / effectiveTotal : null;
 			usageQueueStatus = {
@@ -158,7 +164,6 @@ settings.put("/", async (c) => {
 		usage_queue_direct_write_ratio?: number;
 		attempt_worker_fallback_enabled?: boolean;
 		attempt_worker_fallback_threshold?: number;
-		large_request_offload_endpoints?: LargeRequestOffloadEndpoint[];
 		large_request_offload_threshold_bytes?: number;
 		attempt_log_enabled?: boolean;
 		attempt_log_retention_days?: number;
@@ -240,7 +245,11 @@ settings.put("/", async (c) => {
 
 	if (body.proxy_model_failure_cooldown_threshold !== undefined) {
 		const threshold = Number(body.proxy_model_failure_cooldown_threshold);
-		if (Number.isNaN(threshold) || threshold < 1 || !Number.isInteger(threshold)) {
+		if (
+			Number.isNaN(threshold) ||
+			threshold < 1 ||
+			!Number.isInteger(threshold)
+		) {
 			return jsonError(
 				c,
 				400,
@@ -428,7 +437,11 @@ settings.put("/", async (c) => {
 
 	if (body.proxy_attempt_worker_fallback_threshold !== undefined) {
 		const threshold = Number(body.proxy_attempt_worker_fallback_threshold);
-		if (Number.isNaN(threshold) || threshold < 1 || !Number.isInteger(threshold)) {
+		if (
+			Number.isNaN(threshold) ||
+			threshold < 1 ||
+			!Number.isInteger(threshold)
+		) {
 			return jsonError(
 				c,
 				400,
@@ -440,50 +453,10 @@ settings.put("/", async (c) => {
 		runtimeTouched = true;
 	}
 
-	if (body.proxy_large_request_offload_endpoints !== undefined) {
-		const raw = body.proxy_large_request_offload_endpoints;
-		let endpointList: string[] | null = null;
-		if (Array.isArray(raw)) {
-			endpointList = raw.map((item) => String(item));
-		} else if (typeof raw === "string") {
-			endpointList = raw.split(",");
-		}
-		if (!endpointList) {
-			return jsonError(
-				c,
-				400,
-				"invalid_proxy_large_request_offload_endpoints",
-				"invalid_proxy_large_request_offload_endpoints",
-			);
-		}
-		const allowed = new Set<string>(LARGE_REQUEST_OFFLOAD_ENDPOINT_OPTIONS);
-		const seen = new Set<string>();
-		const normalized: LargeRequestOffloadEndpoint[] = [];
-		for (const endpoint of endpointList) {
-			const value = endpoint.trim().toLowerCase();
-			if (!value) {
-				continue;
-			}
-			if (!allowed.has(value)) {
-				return jsonError(
-					c,
-					400,
-					"invalid_proxy_large_request_offload_endpoints",
-					"invalid_proxy_large_request_offload_endpoints",
-				);
-			}
-			if (seen.has(value)) {
-				continue;
-			}
-			seen.add(value);
-			normalized.push(value as LargeRequestOffloadEndpoint);
-		}
-		runtimePatch.large_request_offload_endpoints = normalized;
-		runtimeTouched = true;
-	}
-
 	if (body.proxy_large_request_offload_threshold_bytes !== undefined) {
-		const thresholdBytes = Number(body.proxy_large_request_offload_threshold_bytes);
+		const thresholdBytes = Number(
+			body.proxy_large_request_offload_threshold_bytes,
+		);
 		if (
 			Number.isNaN(thresholdBytes) ||
 			thresholdBytes < 0 ||

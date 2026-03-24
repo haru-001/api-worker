@@ -1,4 +1,4 @@
-﻿import { Button, Card, Input, MultiSelect, Switch } from "../components/ui";
+﻿import { Button, Card, Input, Switch } from "../components/ui";
 import type {
 	RuntimeProxyConfig,
 	SettingsForm,
@@ -19,14 +19,6 @@ const streamUsageModes = [
 	{ value: "full", label: "完整", hint: "全量解析" },
 	{ value: "lite", label: "轻量", hint: "降低开销" },
 	{ value: "off", label: "关闭", hint: "仅记录基础" },
-] as const;
-
-const largeRequestOffloadEndpointOptions = [
-	{ value: "chat", label: "chat/completions" },
-	{ value: "responses", label: "responses" },
-	{ value: "embeddings", label: "embeddings" },
-	{ value: "images", label: "images" },
-	{ value: "passthrough", label: "passthrough" },
 ] as const;
 
 /**
@@ -353,8 +345,7 @@ export const SettingsView = ({
 								onInput={(event) => {
 									const target = event.currentTarget as HTMLInputElement | null;
 									onFormChange({
-										proxy_responses_affinity_ttl_seconds:
-											target?.value ?? "",
+										proxy_responses_affinity_ttl_seconds: target?.value ?? "",
 									});
 								}}
 							/>
@@ -399,7 +390,9 @@ export const SettingsView = ({
 					<div class="app-settings-list app-settings-list--allow-overflow">
 						<div class="app-settings-row">
 							<div class="app-settings-row__main">
-								<span class="app-settings-row__label">启用调用执行器异常回退</span>
+								<span class="app-settings-row__label">
+									启用调用执行器异常回退
+								</span>
 								<p class="app-settings-row__hint">
 									当调用执行器出现异常时，按阈值切换为本地直连，提升请求稳定性。
 								</p>
@@ -424,7 +417,8 @@ export const SettingsView = ({
 									异常阈值（次/请求）
 								</label>
 								<p class="app-settings-row__hint">
-									单个请求内达到该异常次数后，后续执行会自动切为本地直连，最小 1。
+									单个请求内达到该异常次数后，后续执行会自动切为本地直连，最小
+									1。
 								</p>
 							</div>
 							<Input
@@ -445,27 +439,7 @@ export const SettingsView = ({
 								}}
 							/>
 						</div>
-						<div class="app-settings-row app-settings-row--stack app-settings-row--overlay">
-							<div class="app-settings-row__main">
-								<span class="app-settings-row__label">大请求下沉端点</span>
-								<p class="app-settings-row__hint">
-									仅对选中的接口应用大请求下沉策略，可搜索并多选。
-								</p>
-							</div>
-							<MultiSelect
-								class="app-settings-row__control app-settings-row__control--full"
-								emptyLabel="没有可选端点"
-								options={[...largeRequestOffloadEndpointOptions]}
-								placeholder="未选择端点"
-								searchPlaceholder="搜索端点"
-								value={settingsForm.proxy_large_request_offload_endpoints}
-								onChange={(next) =>
-									onFormChange({
-										proxy_large_request_offload_endpoints: next,
-									})
-								}
-							/>
-						</div>
+						\r\n\t\t\t\t\t\t\t
 						<div class="app-settings-row">
 							<div class="app-settings-row__main">
 								<label
@@ -475,7 +449,7 @@ export const SettingsView = ({
 									大请求下沉阈值（字节）
 								</label>
 								<p class="app-settings-row__hint">
-									达到该体积后才触发下沉；0 表示所有命中端点都下沉。
+									达到该体积后才触发下沉；0 表示所有请求都下沉。
 								</p>
 							</div>
 							<Input
@@ -499,11 +473,15 @@ export const SettingsView = ({
 					<div class="app-settings-stats">
 						<div class="app-settings-stat">
 							<div class="app-settings-stat__label">调用执行器绑定</div>
-							<div class="app-settings-stat__value">{attemptWorkerBoundValue}</div>
+							<div class="app-settings-stat__value">
+								{attemptWorkerBoundValue}
+							</div>
 						</div>
 						<div class="app-settings-stat">
 							<div class="app-settings-stat__label">回退策略生效</div>
-							<div class="app-settings-stat__value">{attemptWorkerActiveValue}</div>
+							<div class="app-settings-stat__value">
+								{attemptWorkerActiveValue}
+							</div>
 						</div>
 					</div>
 				</Card>
@@ -761,4 +739,3 @@ export const SettingsView = ({
 		</div>
 	);
 };
-

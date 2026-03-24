@@ -65,7 +65,6 @@ export const initialSettingsForm: SettingsForm = {
 	usage_queue_direct_write_ratio: "0.5",
 	proxy_attempt_worker_fallback_enabled: false,
 	proxy_attempt_worker_fallback_threshold: "2",
-	proxy_large_request_offload_endpoints: ["chat", "responses"],
 	proxy_large_request_offload_threshold_bytes: "32768",
 };
 

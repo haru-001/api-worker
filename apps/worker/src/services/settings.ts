@@ -38,7 +38,6 @@ const DEFAULT_USAGE_QUEUE_DAILY_LIMIT = 10000;
 const DEFAULT_USAGE_QUEUE_DIRECT_WRITE_RATIO = 0.5;
 const DEFAULT_PROXY_ATTEMPT_WORKER_FALLBACK_ENABLED = false;
 const DEFAULT_PROXY_ATTEMPT_WORKER_FALLBACK_THRESHOLD = 2;
-const DEFAULT_PROXY_LARGE_REQUEST_OFFLOAD_ENDPOINTS = ["chat", "responses"];
 const DEFAULT_PROXY_LARGE_REQUEST_OFFLOAD_THRESHOLD_BYTES = 32768;
 const DEFAULT_ATTEMPT_LOG_ENABLED = true;
 const DEFAULT_ATTEMPT_LOG_RETENTION_DAYS = 30;
@@ -72,8 +71,7 @@ const PROXY_STREAM_USAGE_MAX_BYTES_KEY = "proxy_stream_usage_max_bytes";
 const PROXY_STREAM_USAGE_MAX_PARSERS_KEY = "proxy_stream_usage_max_parsers";
 const PROXY_STREAM_USAGE_PARSE_TIMEOUT_KEY =
 	"proxy_stream_usage_parse_timeout_ms";
-const PROXY_RESPONSES_AFFINITY_TTL_KEY =
-	"proxy_responses_affinity_ttl_seconds";
+const PROXY_RESPONSES_AFFINITY_TTL_KEY = "proxy_responses_affinity_ttl_seconds";
 const PROXY_STREAM_OPTIONS_CAPABILITY_TTL_KEY =
 	"proxy_stream_options_capability_ttl_seconds";
 const PROXY_USAGE_QUEUE_ENABLED_KEY = "proxy_usage_queue_enabled";
@@ -83,23 +81,10 @@ const PROXY_ATTEMPT_WORKER_FALLBACK_ENABLED_KEY =
 	"proxy_attempt_worker_fallback_enabled";
 const PROXY_ATTEMPT_WORKER_FALLBACK_THRESHOLD_KEY =
 	"proxy_attempt_worker_fallback_threshold";
-const PROXY_LARGE_REQUEST_OFFLOAD_ENDPOINTS_KEY =
-	"proxy_large_request_offload_endpoints";
 const PROXY_LARGE_REQUEST_OFFLOAD_THRESHOLD_BYTES_KEY =
 	"proxy_large_request_offload_threshold_bytes";
 const ATTEMPT_LOG_ENABLED_KEY = "attempt_log_enabled";
 const ATTEMPT_LOG_RETENTION_DAYS_KEY = "attempt_log_retention_days";
-
-export const LARGE_REQUEST_OFFLOAD_ENDPOINT_OPTIONS = [
-	"chat",
-	"responses",
-	"embeddings",
-	"images",
-	"passthrough",
-] as const;
-
-export type LargeRequestOffloadEndpoint =
-	(typeof LARGE_REQUEST_OFFLOAD_ENDPOINT_OPTIONS)[number];
 
 export type RuntimeProxyConfig = {
 	upstream_timeout_ms: number;
@@ -114,7 +99,6 @@ export type RuntimeProxyConfig = {
 	usage_queue_direct_write_ratio: number;
 	attempt_worker_fallback_enabled: boolean;
 	attempt_worker_fallback_threshold: number;
-	large_request_offload_endpoints: LargeRequestOffloadEndpoint[];
 	large_request_offload_threshold_bytes: number;
 	attempt_log_enabled: boolean;
 	attempt_log_retention_days: number;
@@ -140,7 +124,6 @@ export type ProxyRuntimeSettings = {
 	usage_queue_direct_write_ratio: number;
 	attempt_worker_fallback_enabled: boolean;
 	attempt_worker_fallback_threshold: number;
-	large_request_offload_endpoints: LargeRequestOffloadEndpoint[];
 	large_request_offload_threshold_bytes: number;
 	attempt_log_enabled: boolean;
 	attempt_log_retention_days: number;
@@ -297,38 +280,6 @@ function parseRatioSetting(value: string | null, fallback: number): number {
 		return Math.min(1, Math.max(0, parsed));
 	}
 	return fallback;
-}
-
-function normalizeLargeRequestOffloadEndpoints(
-	values: readonly string[],
-): LargeRequestOffloadEndpoint[] {
-	const allowed = new Set<string>(LARGE_REQUEST_OFFLOAD_ENDPOINT_OPTIONS);
-	const seen = new Set<string>();
-	const normalized: LargeRequestOffloadEndpoint[] = [];
-	for (const value of values) {
-		const endpoint = String(value).trim().toLowerCase();
-		if (!endpoint || !allowed.has(endpoint) || seen.has(endpoint)) {
-			continue;
-		}
-		seen.add(endpoint);
-		normalized.push(endpoint as LargeRequestOffloadEndpoint);
-	}
-	return normalized;
-}
-
-function parseEndpointListSetting(
-	value: string | null,
-	fallback: readonly string[],
-): LargeRequestOffloadEndpoint[] {
-	if (value === null || value === undefined) {
-		return normalizeLargeRequestOffloadEndpoints(fallback);
-	}
-	const trimmed = value.trim();
-	if (!trimmed) {
-		return [];
-	}
-	const normalized = normalizeLargeRequestOffloadEndpoints(trimmed.split(","));
-	return normalized;
 }
 
 async function getCachedSetting<T>(
@@ -512,10 +463,6 @@ export async function getProxyRuntimeSettings(
 		settings[PROXY_ATTEMPT_WORKER_FALLBACK_THRESHOLD_KEY] ?? null,
 		DEFAULT_PROXY_ATTEMPT_WORKER_FALLBACK_THRESHOLD,
 	);
-	const largeRequestOffloadEndpoints = parseEndpointListSetting(
-		settings[PROXY_LARGE_REQUEST_OFFLOAD_ENDPOINTS_KEY] ?? null,
-		DEFAULT_PROXY_LARGE_REQUEST_OFFLOAD_ENDPOINTS,
-	);
 	const largeRequestOffloadThresholdBytes = parseNonNegativeSetting(
 		settings[PROXY_LARGE_REQUEST_OFFLOAD_THRESHOLD_BYTES_KEY] ?? null,
 		DEFAULT_PROXY_LARGE_REQUEST_OFFLOAD_THRESHOLD_BYTES,
@@ -544,7 +491,6 @@ export async function getProxyRuntimeSettings(
 		usage_queue_direct_write_ratio: usageQueueDirectWriteRatio,
 		attempt_worker_fallback_enabled: attemptWorkerFallbackEnabled,
 		attempt_worker_fallback_threshold: attemptWorkerFallbackThreshold,
-		large_request_offload_endpoints: largeRequestOffloadEndpoints,
 		large_request_offload_threshold_bytes: largeRequestOffloadThresholdBytes,
 		attempt_log_enabled: attemptLogEnabled,
 		attempt_log_retention_days: attemptLogRetentionDays,
@@ -711,19 +657,9 @@ export async function setProxyRuntimeSettings(
 			upsertSetting(
 				db,
 				PROXY_ATTEMPT_WORKER_FALLBACK_THRESHOLD_KEY,
-				String(Math.max(1, Math.floor(update.attempt_worker_fallback_threshold))),
-			),
-		);
-	}
-	if (update.large_request_offload_endpoints !== undefined) {
-		const endpoints = normalizeLargeRequestOffloadEndpoints(
-			update.large_request_offload_endpoints,
-		);
-		tasks.push(
-			upsertSetting(
-				db,
-				PROXY_LARGE_REQUEST_OFFLOAD_ENDPOINTS_KEY,
-				endpoints.join(","),
+				String(
+					Math.max(1, Math.floor(update.attempt_worker_fallback_threshold)),
+				),
 			),
 		);
 	}
@@ -732,7 +668,9 @@ export async function setProxyRuntimeSettings(
 			upsertSetting(
 				db,
 				PROXY_LARGE_REQUEST_OFFLOAD_THRESHOLD_BYTES_KEY,
-				String(Math.max(0, Math.floor(update.large_request_offload_threshold_bytes))),
+				String(
+					Math.max(0, Math.floor(update.large_request_offload_threshold_bytes)),
+				),
 			),
 		);
 	}
