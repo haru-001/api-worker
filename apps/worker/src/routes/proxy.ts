@@ -38,6 +38,7 @@ import {
 	parseDownstreamModel,
 	parseDownstreamStream,
 } from "../services/provider-transform";
+import { shouldCooldown } from "../services/model-cooldown";
 import {
 	buildActiveChannelsKey,
 	buildCallTokensIndexKey,
@@ -123,20 +124,12 @@ const INTERNAL_USAGE_RESERVE_TIMEOUT_MS = 600;
 const INTERNAL_USAGE_QUEUE_SEND_TIMEOUT_MS = 1500;
 const INTERNAL_USAGE_RESERVE_BREAKER_MS = 60_000;
 const INTERNAL_USAGE_ERROR_MESSAGE_MAX_LENGTH = 320;
-const INTERNAL_COOLDOWN_HTTP_STATUSES = [408, 429];
-const INTERNAL_COOLDOWN_MIN_STATUS = 500;
 const HOT_KV_ACTIVE_CHANNELS_TTL_SECONDS = 60;
 const HOT_KV_CALL_TOKENS_TTL_SECONDS = 60;
 const RESPONSES_TOOL_CALL_NOT_FOUND_SNIPPET =
 	"no tool call found for function call output";
 const STREAM_OPTIONS_UNSUPPORTED_SNIPPET = "unsupported parameter";
 const STREAM_OPTIONS_PARAM_NAME = "stream_options";
-const INTERNAL_COOLDOWN_ERROR_CODES = [
-	"timeout",
-	"exception",
-	PROXY_UPSTREAM_TIMEOUT_ERROR_CODE,
-	PROXY_UPSTREAM_FETCH_ERROR_CODE,
-];
 const ATTEMPT_BINDING_RESPONSE_PATH_HEADER = "x-ha-attempt-response-path";
 const ATTEMPT_BINDING_LATENCY_HEADER = "x-ha-attempt-latency-ms";
 const ATTEMPT_BINDING_UPSTREAM_REQUEST_ID_HEADER =
@@ -1534,32 +1527,6 @@ async function extractErrorDetails(
 		errorMessage: normalizeMessage(text),
 		errorMetaJson: null,
 	};
-}
-
-export function shouldCooldown(
-	upstreamStatus: number | null,
-	errorCode: string | null,
-): boolean {
-	const normalizedCode = normalizeMessage(errorCode)?.toLowerCase() ?? "";
-	const cooldownErrorCodes = new Set(
-		INTERNAL_COOLDOWN_ERROR_CODES.map((item) => item.trim().toLowerCase()),
-	);
-	if (normalizedCode && cooldownErrorCodes.has(normalizedCode)) {
-		return true;
-	}
-	const cooldownStatuses = new Set(
-		INTERNAL_COOLDOWN_HTTP_STATUSES.map((item) =>
-			Math.floor(Number(item)),
-		).filter((item) => Number.isInteger(item) && item >= 0),
-	);
-	if (upstreamStatus !== null && cooldownStatuses.has(upstreamStatus)) {
-		return true;
-	}
-	const minStatus = Math.max(0, Math.floor(INTERNAL_COOLDOWN_MIN_STATUS));
-	if (upstreamStatus !== null && minStatus > 0 && upstreamStatus >= minStatus) {
-		return true;
-	}
-	return false;
 }
 
 function channelSupportsModel(
