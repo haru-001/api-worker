@@ -752,6 +752,47 @@ function validateOpenAiToolCallChain(
 	return null;
 }
 
+function hasUnresolvedResponsesFunctionCallOutput(
+	body: Record<string, unknown> | null,
+	hints: ResponsesRequestHints | null,
+): boolean {
+	if (!body || !hints?.hasFunctionCallOutput) {
+		return false;
+	}
+	const rawInput = body.input;
+	const inputItems = Array.isArray(rawInput)
+		? rawInput
+		: rawInput
+			? [rawInput]
+			: [];
+	if (inputItems.length === 0) {
+		return false;
+	}
+	const inRequestFunctionCallIds = new Set<string>();
+	for (const rawItem of inputItems) {
+		if (!rawItem || typeof rawItem !== "object" || Array.isArray(rawItem)) {
+			continue;
+		}
+		const item = rawItem as Record<string, unknown>;
+		const itemType = normalizeStringField(item.type)?.toLowerCase();
+		if (itemType !== "function_call") {
+			continue;
+		}
+		const callId = normalizeStringField(
+			item.call_id ?? item.callId ?? item.id,
+		);
+		if (callId) {
+			inRequestFunctionCallIds.add(callId);
+		}
+	}
+	for (const outputCallId of hints.functionCallOutputIds) {
+		if (!inRequestFunctionCallIds.has(outputCallId)) {
+			return true;
+		}
+	}
+	return false;
+}
+
 function isResponsesToolCallNotFoundMessage(message: string | null): boolean {
 	const normalized = normalizeMessage(message)?.toLowerCase();
 	if (!normalized) {
@@ -2323,11 +2364,17 @@ proxy.all("/*", tokenAuth, async (c) => {
 		verifiedModelsByChannel,
 	);
 	const canResolveResponsesAffinity = Boolean(c.env.KV_HOT);
+	const hasUnresolvedToolOutput =
+		endpointType === "responses"
+			? hasUnresolvedResponsesFunctionCallOutput(parsedBody, responsesRequestHints)
+			: false;
+	const responsesPreviousResponseId =
+		responsesRequestHints?.previousResponseId ?? null;
 	let responsesPinnedChannelId: string | null = null;
 	if (
 		canResolveResponsesAffinity &&
-		responsesRequestHints?.hasFunctionCallOutput &&
-		!responsesRequestHints.previousResponseId
+		hasUnresolvedToolOutput &&
+		!responsesPreviousResponseId
 	) {
 		const code = "responses_previous_response_id_required";
 		recordEarlyUsage({
@@ -2340,10 +2387,10 @@ proxy.all("/*", tokenAuth, async (c) => {
 	}
 	if (
 		canResolveResponsesAffinity &&
-		responsesRequestHints?.previousResponseId
+		responsesPreviousResponseId
 	) {
 		const affinityKey = buildResponsesAffinityKey(
-			responsesRequestHints.previousResponseId,
+			responsesPreviousResponseId,
 		);
 		const affinity = await readHotJson<ResponsesAffinityRecord>(
 			c.env.KV_HOT,
@@ -2360,15 +2407,15 @@ proxy.all("/*", tokenAuth, async (c) => {
 	}
 	if (
 		canResolveResponsesAffinity &&
-		responsesRequestHints?.hasFunctionCallOutput &&
-		responsesRequestHints.previousResponseId &&
+		hasUnresolvedToolOutput &&
+		responsesPreviousResponseId &&
 		!responsesPinnedChannelId
 	) {
 		const code = "responses_affinity_missing";
 		recordEarlyUsage({
 			status: 409,
 			code,
-			message: `responses_affinity_missing: previous_response_id=${responsesRequestHints.previousResponseId}`,
+			message: `responses_affinity_missing: previous_response_id=${responsesPreviousResponseId}`,
 		});
 		return jsonErrorWithTrace(409, code, code);
 	}
