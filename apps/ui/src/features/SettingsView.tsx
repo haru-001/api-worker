@@ -587,23 +587,6 @@ export const SettingsView = ({
           </div>
         </Card>
 
-        <Card class="app-settings-group">
-          <div class="app-settings-group__header">
-            <h4 class="app-settings-group__title">用量队列</h4>
-            <p class="app-settings-group__caption">已移除</p>
-          </div>
-          <div class="app-settings-list">
-            <div class="app-settings-row">
-              <div class="app-settings-row__main">
-                <span class="app-settings-row__label">当前策略</span>
-                <p class="app-settings-row__hint">
-                  队列写入已移除，usage 与尝试日志改为直接写入数据库。
-                </p>
-              </div>
-            </div>
-          </div>
-        </Card>
-
         <div class="app-settings-footer">
           <Button
             variant="primary"
