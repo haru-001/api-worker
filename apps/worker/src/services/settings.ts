@@ -16,11 +16,7 @@ const DEFAULT_PROXY_STREAM_OPTIONS_CAPABILITY_TTL_SECONDS = 7 * 24 * 60 * 60;
 const DEFAULT_PROXY_UPSTREAM_TIMEOUT_MS = 180000;
 const DEFAULT_PROXY_RETRY_MAX_RETRIES = 5;
 const DEFAULT_PROXY_RETRY_SLEEP_MS = 1000;
-const DEFAULT_PROXY_RETRY_SKIP_ERROR_CODES = [
-	"model_not_found",
-	"no_available_providers",
-	"no_available_channels",
-];
+const DEFAULT_PROXY_RETRY_SKIP_ERROR_CODES: string[] = [];
 const DEFAULT_PROXY_RETRY_SLEEP_ERROR_CODES = [
 	"system_cpu_overloaded",
 	"system_disk_overloaded",

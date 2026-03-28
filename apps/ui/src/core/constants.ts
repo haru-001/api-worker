@@ -55,11 +55,7 @@ export const initialSettingsForm: SettingsForm = {
 	proxy_upstream_timeout_ms: "180000",
 	proxy_retry_max_retries: "5",
 	proxy_retry_sleep_ms: "1000",
-	proxy_retry_skip_error_codes: [
-		"model_not_found",
-		"no_available_providers",
-		"no_available_channels",
-	],
+	proxy_retry_skip_error_codes: [],
 	proxy_retry_sleep_error_codes: [
 		"system_cpu_overloaded",
 		"system_disk_overloaded",

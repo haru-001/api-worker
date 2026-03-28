@@ -135,9 +135,7 @@ function normalizeRetryConfig(
 		Number.isFinite(sleepRaw) && sleepRaw >= 0 ? Math.floor(sleepRaw) : 0;
 	return {
 		sleepMs,
-		skipErrorCodeSet: new Set(
-			normalizeRetryErrorCodeList(payload?.skipErrorCodes),
-		),
+		skipErrorCodeSet: new Set(normalizeRetryErrorCodeList(payload?.skipErrorCodes)),
 		sleepErrorCodeSet: new Set(
 			normalizeRetryErrorCodeList(payload?.sleepErrorCodes),
 		),
