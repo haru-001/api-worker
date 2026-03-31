@@ -10,7 +10,7 @@ import modelRoutes from "./routes/models";
 import newapiChannelRoutes from "./routes/newapiChannels";
 import newapiGroupRoutes from "./routes/newapiGroups";
 import newapiUserRoutes from "./routes/newapiUsers";
-import proxyForwardRoutes from "./routes/proxy-forward";
+import proxyRoutes from "./routes/proxy";
 import settingsRoutes from "./routes/settings";
 import siteRoutes from "./routes/sites";
 import tokenRoutes from "./routes/tokens";
@@ -80,8 +80,8 @@ app.route("/api/channel", newapiChannelRoutes);
 app.route("/api/user", newapiUserRoutes);
 app.route("/api/group", newapiGroupRoutes);
 
-app.route("/v1", proxyForwardRoutes);
-app.route("/v1beta", proxyForwardRoutes);
+app.route("/v1", proxyRoutes);
+app.route("/v1beta", proxyRoutes);
 
 app.onError((_, c) => {
 	if (

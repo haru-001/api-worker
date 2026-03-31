@@ -171,8 +171,36 @@ const HA_ATTEMPT_COUNT_HEADER = "x-ha-attempt-count";
 const HA_CANDIDATE_COUNT_HEADER = "x-ha-candidate-count";
 const MAX_ATTEMPT_WORKER_INVOCATIONS = 31;
 const USAGE_OBSERVE_FAILURE_STAGE = "usage_observe";
+const PROXY_INTERNAL_ERROR_CODE = "proxy_internal_error";
+const PROVIDER_DETECT_FAILED_CODE = "provider_detect_failed";
+const WEIGHTED_ORDER_FAILED_CODE = "weighted_order_failed";
+const RESPONSE_ADAPT_FAILED_CODE = "response_adapt_failed";
 
 let activeStreamUsageParsers = 0;
+
+proxy.onError((error, c) => {
+	const traceId = crypto.randomUUID();
+	const errorMessage =
+		error instanceof Error && error.message
+			? error.message
+			: "proxy_unhandled_exception";
+	console.error("proxy_unhandled_exception", {
+		traceId,
+		path: c.req.path,
+		message: errorMessage,
+	});
+	const response = c.json(
+		{
+			error: PROXY_INTERNAL_ERROR_CODE,
+			code: PROXY_INTERNAL_ERROR_CODE,
+		},
+		502,
+	);
+	response.headers.set(HA_TRACE_ID_HEADER, traceId);
+	response.headers.set(HA_ATTEMPT_COUNT_HEADER, "0");
+	response.headers.set(HA_CANDIDATE_COUNT_HEADER, "0");
+	return response;
+});
 
 function normalizeMessage(value: string | null): string | null {
 	if (!value) {
@@ -2305,15 +2333,30 @@ proxy.all("/*", tokenAuth, async (c) => {
 		bindingFailureCount: 0,
 	};
 	const requestPath = normalizeIncomingRequestPath(c.req.path).path;
-	const downstreamProvider = detectDownstreamProvider(requestPath);
-	const endpointType = detectEndpointType(downstreamProvider, requestPath);
+	let downstreamProvider: ProviderType;
+	let endpointType: EndpointType;
+	try {
+		downstreamProvider = detectDownstreamProvider(requestPath);
+		endpointType = detectEndpointType(downstreamProvider, requestPath);
+	} catch (error) {
+		console.error("proxy_provider_detect_failed", {
+			traceId,
+			path: requestPath,
+			message:
+				error instanceof Error ? error.message : "provider_detection_failed",
+		});
+		return jsonErrorWithTrace(
+			502,
+			PROVIDER_DETECT_FAILED_CODE,
+			PROVIDER_DETECT_FAILED_CODE,
+		);
+	}
 	const offloadThresholdBytes = Math.max(
 		0,
 		Math.floor(
 			Number(runtimeSettings.large_request_offload_threshold_bytes ?? 32768),
 		),
 	);
-	const offloadEnabled = offloadThresholdBytes > 0;
 	const requestText = await c.req.text();
 	const offloadDecision = resolveLargeRequestOffload({
 		attemptWorkerAvailable: Boolean(c.env.ATTEMPT_WORKER),
@@ -2323,11 +2366,10 @@ proxy.all("/*", tokenAuth, async (c) => {
 	const requestSizeBytes = offloadDecision.requestSizeKnown
 		? (offloadDecision.requestSizeBytes ?? 0)
 		: requestText.length;
-	const shouldTryLargeRequestDispatch =
-		offloadEnabled &&
-		(offloadDecision.requestSizeKnown
-			? offloadDecision.shouldOffload
-			: Boolean(c.env.ATTEMPT_WORKER) &&
+	const shouldTryLargeRequestDispatch = offloadDecision.requestSizeKnown
+		? offloadDecision.shouldOffload
+		: Boolean(c.env.ATTEMPT_WORKER) &&
+			(offloadThresholdBytes === 0 ||
 				requestSizeBytes >= offloadThresholdBytes);
 	const shouldSkipHeavyBodyParsing = shouldTryLargeRequestDispatch;
 	let parsedBodyInitialized = !shouldSkipHeavyBodyParsing;
@@ -2569,7 +2611,7 @@ proxy.all("/*", tokenAuth, async (c) => {
 				upstreamRequestId: options.upstreamRequestId ?? null,
 				startedAt: options.startedAt,
 				endedAt: options.endedAt,
-				rawSizeBytes: options.rawSizeBytes ?? null,
+				rawSizeBytes: options.rawSizeBytes ?? requestSizeBytes,
 				rawHash: options.rawHash ?? null,
 			},
 		});
@@ -2928,7 +2970,28 @@ proxy.all("/*", tokenAuth, async (c) => {
 		Math.floor(Number(runtimeSettings.retry_max_retries ?? 3)),
 	);
 	const maxAttempts = Math.min(maxRetries + 1, MAX_ATTEMPT_WORKER_INVOCATIONS);
-	const ordered = buildAttemptSequence(candidates, maxAttempts);
+	let ordered: ChannelRecord[];
+	try {
+		ordered = buildAttemptSequence(candidates, maxAttempts);
+	} catch (error) {
+		console.error("proxy_weighted_order_failed", {
+			traceId,
+			path: requestPath,
+			message: error instanceof Error ? error.message : "weighted_order_failed",
+		});
+		recordEarlyUsage({
+			status: 502,
+			code: WEIGHTED_ORDER_FAILED_CODE,
+			message: WEIGHTED_ORDER_FAILED_CODE,
+			failureStage: "channel_select",
+			failureReason: WEIGHTED_ORDER_FAILED_CODE,
+		});
+		return jsonErrorWithTrace(
+			502,
+			WEIGHTED_ORDER_FAILED_CODE,
+			WEIGHTED_ORDER_FAILED_CODE,
+		);
+	}
 	responseCandidateCount = candidates.length;
 	const upstreamTimeoutMs = Math.max(
 		0,
@@ -4807,17 +4870,31 @@ proxy.all("/*", tokenAuth, async (c) => {
 		(endpointType === "chat" || endpointType === "responses")
 	) {
 		responseAttemptCount = attemptsExecuted;
-		const transformed = await adaptChatResponse({
-			response: selectedResponse,
-			upstreamProvider: selectedUpstreamProvider,
-			downstreamProvider,
-			upstreamEndpoint: selectedUpstreamEndpoint,
-			downstreamEndpoint: endpointType,
-			model: selectedUpstreamModel ?? downstreamModel,
-			isStream,
-		});
-		if (transformed !== selectedResponse) {
-			return withTraceHeader(transformed);
+		try {
+			const transformed = await adaptChatResponse({
+				response: selectedResponse,
+				upstreamProvider: selectedUpstreamProvider,
+				downstreamProvider,
+				upstreamEndpoint: selectedUpstreamEndpoint,
+				downstreamEndpoint: endpointType,
+				model: selectedUpstreamModel ?? downstreamModel,
+				isStream,
+			});
+			if (transformed !== selectedResponse) {
+				return withTraceHeader(transformed);
+			}
+		} catch (error) {
+			console.error("proxy_response_adapt_failed", {
+				traceId,
+				path: selectedRequestPath,
+				message:
+					error instanceof Error ? error.message : "response_adapt_failed",
+			});
+			return jsonErrorWithTrace(
+				502,
+				RESPONSE_ADAPT_FAILED_CODE,
+				RESPONSE_ADAPT_FAILED_CODE,
+			);
 		}
 	}
 

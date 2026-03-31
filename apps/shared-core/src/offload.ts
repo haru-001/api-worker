@@ -17,8 +17,6 @@ export function resolveLargeRequestOffload(
 		0,
 		Math.floor(Number(input.thresholdBytes || 0)),
 	);
-	// threshold <= 0 means offload is disabled.
-	const offloadEnabled = thresholdBytes > 0;
 	const contentLengthHeader = input.contentLengthHeader?.trim() ?? "";
 	const contentLength = Number(contentLengthHeader);
 	const requestSizeKnown =
@@ -26,9 +24,17 @@ export function resolveLargeRequestOffload(
 		Number.isFinite(contentLength) &&
 		contentLength >= 0;
 	const requestSizeBytes = requestSizeKnown ? Math.floor(contentLength) : null;
-	if (!input.attemptWorkerAvailable || !offloadEnabled) {
+	if (!input.attemptWorkerAvailable) {
 		return {
 			shouldOffload: false,
+			requestSizeKnown,
+			requestSizeBytes,
+		};
+	}
+	// threshold = 0 means force offload all requests.
+	if (thresholdBytes === 0) {
+		return {
+			shouldOffload: true,
 			requestSizeKnown,
 			requestSizeBytes,
 		};
