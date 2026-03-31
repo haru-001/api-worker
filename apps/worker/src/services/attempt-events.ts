@@ -6,7 +6,7 @@ export type AttemptLogInput = {
 	channelId: string | null;
 	provider: string | null;
 	model: string | null;
-	status: "ok" | "error";
+	status: "ok" | "warn" | "error";
 	errorClass: string | null;
 	errorCode: string | null;
 	httpStatus: number | null;

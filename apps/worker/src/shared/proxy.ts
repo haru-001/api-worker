@@ -169,12 +169,17 @@ const ATTEMPT_BINDING_ATTEMPT_ERROR_CODE = "attempt_binding_call_unavailable";
 const HA_TRACE_ID_HEADER = "x-ha-trace-id";
 const HA_ATTEMPT_COUNT_HEADER = "x-ha-attempt-count";
 const HA_CANDIDATE_COUNT_HEADER = "x-ha-candidate-count";
+const HA_PROXY_QUALITY_HEADER = "x-ha-proxy-quality";
+const HA_BIZ_STATUS_HEADER = "x-ha-biz-status";
+const HA_QUALITY_REASON_HEADER = "x-ha-quality-reason";
 const MAX_ATTEMPT_WORKER_INVOCATIONS = 31;
 const USAGE_OBSERVE_FAILURE_STAGE = "usage_observe";
 const PROXY_INTERNAL_ERROR_CODE = "proxy_internal_error";
 const PROVIDER_DETECT_FAILED_CODE = "provider_detect_failed";
 const WEIGHTED_ORDER_FAILED_CODE = "weighted_order_failed";
 const RESPONSE_ADAPT_FAILED_CODE = "response_adapt_failed";
+const STREAM_META_PARTIAL_CODE = "stream_meta_partial";
+const STREAM_META_PARTIAL_BIZ_STATUS = "29011";
 
 let activeStreamUsageParsers = 0;
 
@@ -2289,11 +2294,42 @@ proxy.all("/*", tokenAuth, async (c) => {
 	const traceId = crypto.randomUUID();
 	let responseAttemptCount = 0;
 	let responseCandidateCount = 0;
+	let responseQuality: "ok" | "stream_meta_partial" = "ok";
+	let responseBizStatus: string | null = null;
+	let responseQualityReason: string | null = null;
+	const markStreamMetaPartial = (options: {
+		reason: string;
+		path: string;
+		eventsSeen: number;
+		hasImmediateUsage: boolean;
+		hasUsageHeaders: boolean;
+	}) => {
+		responseQuality = "stream_meta_partial";
+		responseBizStatus = STREAM_META_PARTIAL_BIZ_STATUS;
+		responseQualityReason = options.reason;
+		console.warn("proxy_stream_meta_partial", {
+			traceId,
+			path: options.path,
+			reason: options.reason,
+			eventsSeen: options.eventsSeen,
+			hasImmediateUsage: options.hasImmediateUsage,
+			hasUsageHeaders: options.hasUsageHeaders,
+		});
+	};
 	const withTraceHeader = (response: Response): Response => {
 		const headers = new Headers(response.headers);
 		headers.set(HA_TRACE_ID_HEADER, traceId);
 		headers.set(HA_ATTEMPT_COUNT_HEADER, String(responseAttemptCount));
 		headers.set(HA_CANDIDATE_COUNT_HEADER, String(responseCandidateCount));
+		if (responseQuality !== "ok") {
+			headers.set(HA_PROXY_QUALITY_HEADER, responseQuality);
+			if (responseBizStatus) {
+				headers.set(HA_BIZ_STATUS_HEADER, responseBizStatus);
+			}
+			if (responseQualityReason) {
+				headers.set(HA_QUALITY_REASON_HEADER, responseQualityReason);
+			}
+		}
 		return new Response(response.body, {
 			status: response.status,
 			statusText: response.statusText,
@@ -2535,7 +2571,7 @@ proxy.all("/*", tokenAuth, async (c) => {
 		latencyMs: number;
 		firstTokenLatencyMs: number | null;
 		usage: NormalizedUsage | null;
-		status: "ok" | "error";
+		status: "ok" | "warn" | "error";
 		upstreamStatus: number | null;
 		errorCode?: string | null;
 		errorMessage?: string | null;
@@ -2581,7 +2617,7 @@ proxy.all("/*", tokenAuth, async (c) => {
 		channelId: string | null;
 		provider: ProviderType | null;
 		model: string | null;
-		status: "ok" | "error";
+		status: "ok" | "warn" | "error";
 		errorClass?: string | null;
 		errorCode?: string | null;
 		httpStatus?: number | null;
@@ -3008,6 +3044,10 @@ proxy.all("/*", tokenAuth, async (c) => {
 	let selectedRequestPath = targetPath;
 	let selectedImmediateUsage: NormalizedUsage | null = null;
 	let selectedHasUsageHeaders = false;
+	let selectedAttemptIndex: number | null = null;
+	let selectedAttemptStartedAt: string | null = null;
+	let selectedAttemptLatencyMs: number | null = null;
+	let selectedAttemptUpstreamRequestId: string | null = null;
 	let lastErrorDetails: ErrorDetails | null = null;
 	let attemptsExecuted = 0;
 	const attemptFailures: AttemptFailureDetail[] = [];
@@ -3658,6 +3698,10 @@ proxy.all("/*", tokenAuth, async (c) => {
 								selectedRequestPath = responsePath;
 								selectedImmediateUsage = immediateUsage;
 								selectedHasUsageHeaders = hasUsageHeaderSignal;
+								selectedAttemptIndex = attemptNumber;
+								selectedAttemptStartedAt = meta.attemptStartedAt;
+								selectedAttemptLatencyMs = attemptLatencyMs;
+								selectedAttemptUpstreamRequestId = attemptUpstreamRequestId;
 								lastErrorDetails = null;
 								if (meta.recordModel) {
 									scheduleUsageEvent({
@@ -4392,6 +4436,10 @@ proxy.all("/*", tokenAuth, async (c) => {
 					selectedRequestPath = responsePath;
 					selectedImmediateUsage = immediateUsage;
 					selectedHasUsageHeaders = hasUsageHeaderSignal;
+					selectedAttemptIndex = attemptNumber;
+					selectedAttemptStartedAt = attemptStartedAt;
+					selectedAttemptLatencyMs = attemptLatencyMs;
+					selectedAttemptUpstreamRequestId = attemptUpstreamRequestId;
 					lastErrorDetails = null;
 					if (recordModel) {
 						scheduleUsageEvent({
@@ -4688,6 +4736,43 @@ proxy.all("/*", tokenAuth, async (c) => {
 				parse_error: parseErrorMeta,
 			});
 		};
+		let streamMetaPartialLogged = false;
+		const markStreamMetaPartialOutcome = (options: {
+			reason: string;
+			eventsSeen: number;
+		}) => {
+			if (streamMetaPartialLogged) {
+				return;
+			}
+			streamMetaPartialLogged = true;
+			markStreamMetaPartial({
+				reason: options.reason,
+				path: selectedRequestPath,
+				eventsSeen: options.eventsSeen,
+				hasImmediateUsage: Boolean(selectedImmediateUsage),
+				hasUsageHeaders: selectedHasUsageHeaders,
+			});
+			if (
+				selectedAttemptIndex !== null &&
+				selectedAttemptStartedAt &&
+				selectedAttemptLatencyMs !== null
+			) {
+				recordAttemptLog({
+					attemptIndex: selectedAttemptIndex,
+					channelId: selectedChannel.id,
+					provider: selectedUpstreamProvider,
+					model: selectedUpstreamModel ?? downstreamModel,
+					status: "warn",
+					errorClass: "stream_meta",
+					errorCode: STREAM_META_PARTIAL_CODE,
+					httpStatus: selectedResponse.status,
+					latencyMs: selectedAttemptLatencyMs,
+					upstreamRequestId: selectedAttemptUpstreamRequestId,
+					startedAt: selectedAttemptStartedAt,
+					endedAt: new Date().toISOString(),
+				});
+			}
+		};
 		const canParseStream =
 			streamUsageOptions.mode !== "off" &&
 			activeStreamUsageParsers < streamUsageMaxParsers;
@@ -4720,6 +4805,14 @@ proxy.all("/*", tokenAuth, async (c) => {
 				.then((streamUsage) => {
 					const usageValue = selectedImmediateUsage ?? streamUsage.usage;
 					if (streamUsage.timedOut) {
+						const timedOutWithContentNoMeta =
+							!usageValue && (streamUsage.eventsSeen ?? 0) > 0;
+						if (timedOutWithContentNoMeta) {
+							markStreamMetaPartialOutcome({
+								reason: "usage_parse_timeout",
+								eventsSeen: streamUsage.eventsSeen ?? 0,
+							});
+						}
 						const timeoutMessage = `usage_parse_timeout: stream usage parsing timed out after ${streamUsageParseTimeoutMs}ms`;
 						finalizeUsage({
 							channelId: selectedChannel.id,
@@ -4727,9 +4820,11 @@ proxy.all("/*", tokenAuth, async (c) => {
 							latencyMs: selectedLatencyMs,
 							firstTokenLatencyMs: streamUsage.firstTokenLatencyMs,
 							usage: usageValue,
-							status: "ok",
+							status: timedOutWithContentNoMeta ? "warn" : "ok",
 							upstreamStatus: selectedResponse.status,
-							errorCode: "usage_parse_timeout",
+							errorCode: timedOutWithContentNoMeta
+								? STREAM_META_PARTIAL_CODE
+								: "usage_parse_timeout",
 							errorMessage: timeoutMessage,
 							failureStage: USAGE_OBSERVE_FAILURE_STAGE,
 							failureReason: "usage_parse_timeout",
@@ -4753,6 +4848,13 @@ proxy.all("/*", tokenAuth, async (c) => {
 						const streamUsageMissingCode = selectedHasUsageHeaders
 							? "usage_missing.stream.header_signal_unparseable"
 							: "usage_missing.stream.signal_absent";
+						const hasStreamContent = (streamUsage.eventsSeen ?? 0) > 0;
+						if (hasStreamContent) {
+							markStreamMetaPartialOutcome({
+								reason: streamUsageMissingCode,
+								eventsSeen: streamUsage.eventsSeen ?? 0,
+							});
+						}
 						const streamUsageMissingMessage = `usage_missing: ${streamUsageMissingCode}`;
 						finalizeUsage({
 							channelId: selectedChannel.id,
@@ -4760,10 +4862,14 @@ proxy.all("/*", tokenAuth, async (c) => {
 							latencyMs: selectedLatencyMs,
 							firstTokenLatencyMs: streamUsage.firstTokenLatencyMs,
 							usage: null,
-							status: "ok",
+							status: hasStreamContent ? "warn" : "ok",
 							upstreamStatus: selectedResponse.status,
-							errorCode: streamUsageMissingCode,
-							errorMessage: streamUsageMissingMessage,
+							errorCode: hasStreamContent
+								? STREAM_META_PARTIAL_CODE
+								: streamUsageMissingCode,
+							errorMessage: hasStreamContent
+								? `${STREAM_META_PARTIAL_CODE}: ${streamUsageMissingCode}`
+								: streamUsageMissingMessage,
 							failureStage: USAGE_OBSERVE_FAILURE_STAGE,
 							failureReason: streamUsageMissingCode,
 							usageSource: "none",
