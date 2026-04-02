@@ -155,6 +155,20 @@ export const SettingsView = ({
 			: runtimeConfig.attempt_worker_fallback_active
 				? "是"
 				: "否";
+	const siteTaskWorkerBoundValue =
+		runtimeConfig === null || runtimeConfig === undefined
+			? "-"
+			: runtimeConfig.site_task_worker_transport === "local_http"
+				? "本地 HTTP"
+				: runtimeConfig.site_task_worker_transport === "binding"
+					? "Service Binding"
+					: "未启用";
+	const siteTaskWorkerActiveValue =
+		runtimeConfig === null || runtimeConfig === undefined
+			? "-"
+			: runtimeConfig.site_task_worker_fallback_active
+				? "是"
+				: "否";
 	const mergedRetryErrorCodeOptions = useMemo(() => {
 		const all = new Set<string>();
 		for (const code of retryErrorCodeOptions) {
@@ -802,6 +816,98 @@ export const SettingsView = ({
 							<div class="app-settings-stat__label">回退策略生效</div>
 							<div class="app-settings-stat__value">
 								{attemptWorkerActiveValue}
+							</div>
+						</div>
+					</div>
+				</Card>
+
+				<Card class="app-settings-group app-settings-group--allow-overflow">
+					<div class="app-settings-group__header">
+						<h4 class="app-settings-group__title">站点任务</h4>
+						<p class="app-settings-group__caption">
+							配置站点测试、签到与恢复探测任务
+						</p>
+					</div>
+					<div class="app-settings-list app-settings-list--allow-overflow">
+						<div class="app-settings-row">
+							<div class="app-settings-row__main">
+								<label
+									class="app-settings-row__label"
+									for="site-task-concurrency"
+								>
+									站点任务并发上限
+								</label>
+								<p class="app-settings-row__hint">
+									控制批量签到和恢复探测时的并发执行数量
+								</p>
+							</div>
+							<Input
+								class="app-settings-row__control app-settings-row__control--compact"
+								id="site-task-concurrency"
+								name="site_task_concurrency"
+								type="number"
+								min="1"
+								step="1"
+								value={settingsForm.site_task_concurrency}
+								onInput={(event) => {
+									const target = event.currentTarget as HTMLInputElement | null;
+									onFormChange({ site_task_concurrency: target?.value ?? "" });
+								}}
+							/>
+						</div>
+						<div class="app-settings-row">
+							<div class="app-settings-row__main">
+								<label class="app-settings-row__label" for="site-task-timeout">
+									站点任务超时（毫秒）
+								</label>
+								<p class="app-settings-row__hint">
+									单个站点任务允许执行的最长时间
+								</p>
+							</div>
+							<Input
+								class="app-settings-row__control app-settings-row__control--compact"
+								id="site-task-timeout"
+								name="site_task_timeout_ms"
+								type="number"
+								min="1"
+								step="1"
+								value={settingsForm.site_task_timeout_ms}
+								onInput={(event) => {
+									const target = event.currentTarget as HTMLInputElement | null;
+									onFormChange({ site_task_timeout_ms: target?.value ?? "" });
+								}}
+							/>
+						</div>
+						<div class="app-settings-row">
+							<div class="app-settings-row__main">
+								<span class="app-settings-row__label">
+									站点任务失败自动回退
+								</span>
+								<p class="app-settings-row__hint">
+									任务执行异常时，自动切换到兼容处理流程
+								</p>
+							</div>
+							<div class="app-settings-row__switch">
+								<Switch
+									checked={settingsForm.site_task_fallback_enabled}
+									onToggle={(next) => {
+										onFormChange({ site_task_fallback_enabled: next });
+									}}
+								/>
+							</div>
+						</div>
+					</div>
+					<div class="app-settings-stats">
+						<div class="app-settings-stat">
+							<div class="app-settings-stat__label">站点任务绑定</div>
+							<div class="app-settings-stat__value">
+								{siteTaskWorkerBoundValue}
+							</div>
+						</div>
+						<div class="app-settings-stat">
+							<div class="app-settings-stat__label">站点回退策略生效</div>
+							<div class="app-settings-stat__value">
+								{siteTaskWorkerActiveValue}
 							</div>
 						</div>
 					</div>

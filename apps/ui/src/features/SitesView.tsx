@@ -266,7 +266,9 @@ export const SitesView = ({
 				<div class="flex flex-wrap items-center justify-between gap-3">
 					<div>
 						<h3 class="app-title text-lg">站点管理</h3>
-						<p class="app-subtitle">统一维护调用令牌、系统令牌与站点类型。</p>
+						<p class="app-subtitle">
+							统一维护调用令牌、系统令牌与站点类型，并支持测试、签到与恢复探测。
+						</p>
 					</div>
 					<div class="flex flex-wrap items-center gap-2">
 						{summary && (
@@ -293,7 +295,7 @@ export const SitesView = ({
 							disabled={isCheckinAll}
 							onClick={onRunAll}
 						>
-							{isCheckinAll ? "签到中..." : "一键签到"}
+							{isCheckinAll ? "批量签到中..." : "批量签到"}
 						</Button>
 						<Button
 							class="h-9 px-4 text-xs"
@@ -302,7 +304,7 @@ export const SitesView = ({
 							disabled={isTestingAll}
 							onClick={onTestAll}
 						>
-							{isTestingAll ? "测试中..." : "一键测试"}
+							{isTestingAll ? "批量测试中..." : "批量测试"}
 						</Button>
 						<Button
 							class="h-9 px-4 text-xs"
@@ -311,7 +313,7 @@ export const SitesView = ({
 							disabled={isProbeRecovery}
 							onClick={onProbeRecovery}
 						>
-							{isProbeRecovery ? "探测中..." : "探测可用渠道"}
+							{isProbeRecovery ? "探测中..." : "探测可恢复站点"}
 						</Button>
 						<Button
 							class="h-9 px-4 text-xs"
@@ -488,7 +490,7 @@ export const SitesView = ({
 												disabled={testPending}
 												onClick={() => onTest(site.id)}
 											>
-												{testPending ? "测试中..." : "连通测试"}
+												{testPending ? "测试中..." : "测试"}
 											</Button>
 											<Button
 												class="h-9 w-full px-3 text-xs"
@@ -677,7 +679,7 @@ export const SitesView = ({
 														disabled={testPending}
 														onClick={() => onTest(site.id)}
 													>
-														{testPending ? "测试中..." : "连通测试"}
+														{testPending ? "测试中..." : "测试"}
 													</Button>
 													<Button
 														class="h-9 px-3 text-xs"

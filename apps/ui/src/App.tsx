@@ -826,6 +826,14 @@ const App = () => {
 			proxy_large_request_offload_threshold_bytes: String(
 				runtimeSettings?.large_request_offload_threshold_bytes ?? 32768,
 			),
+			site_task_concurrency: String(
+				runtimeSettings?.site_task_concurrency ?? 4,
+			),
+			site_task_timeout_ms: String(
+				runtimeSettings?.site_task_timeout_ms ?? 12000,
+			),
+			site_task_fallback_enabled:
+				runtimeSettings?.site_task_fallback_enabled ?? true,
 		};
 		setSettingsForm(nextSettingsForm);
 		setSettingsFormSnapshot(nextSettingsForm);
@@ -1192,7 +1200,7 @@ const App = () => {
 							summary.failed > 0 ? `，失败 ${summary.failed}` : ""
 						}`
 					: "";
-				pushNotice("success", `连通测试完成，模型数 ${modelCount}${detail}`);
+				pushNotice("success", `站点测试完成，模型数 ${modelCount}${detail}`);
 			} catch (error) {
 				pushNotice("error", (error as Error).message);
 			} finally {
@@ -1214,7 +1222,7 @@ const App = () => {
 		startAction(actionKey);
 		setSiteTestAllReport(null);
 		setSiteTestReportOpen(false);
-		pushNotice("info", "正在执行一键测试...");
+		pushNotice("info", "正在批量测试站点...");
 		const results: SiteTestResult[] = [];
 		const failedSites: SiteTestFailureItem[] = [];
 		try {
@@ -1254,8 +1262,8 @@ const App = () => {
 			});
 			let message =
 				summary.failed > 0
-					? `一键测试完成，成功 ${summary.success}/${testedTotal}，失败 ${summary.failed}。`
-					: `一键测试完成，成功 ${summary.success}/${testedTotal}。`;
+					? `批量测试完成，成功 ${summary.success}/${testedTotal}，失败 ${summary.failed}。`
+					: `批量测试完成，成功 ${summary.success}/${testedTotal}。`;
 			if (summary.skipped > 0) {
 				message += ` 已跳过 ${summary.skipped} 个禁用站点。`;
 			}
@@ -1570,6 +1578,8 @@ const App = () => {
 			const largeRequestOffloadThresholdBytes = Number(
 				settingsForm.proxy_large_request_offload_threshold_bytes,
 			);
+			const siteTaskConcurrency = Number(settingsForm.site_task_concurrency);
+			const siteTaskTimeoutMs = Number(settingsForm.site_task_timeout_ms);
 			if (
 				Number.isNaN(retention) ||
 				retention < 1 ||
@@ -1676,6 +1686,22 @@ const App = () => {
 				pushNotice("warning", "大请求下沉阈值需为非负整数");
 				return;
 			}
+			if (
+				Number.isNaN(siteTaskConcurrency) ||
+				siteTaskConcurrency < 1 ||
+				!Number.isInteger(siteTaskConcurrency)
+			) {
+				pushNotice("warning", "站点任务并发需为正整数");
+				return;
+			}
+			if (
+				Number.isNaN(siteTaskTimeoutMs) ||
+				siteTaskTimeoutMs < 1 ||
+				!Number.isInteger(siteTaskTimeoutMs)
+			) {
+				pushNotice("warning", "站点任务超时需为正整数");
+				return;
+			}
 			if (!/^\d{2}:\d{2}$/.test(channelRecoveryProbeScheduleTime)) {
 				pushNotice("warning", "禁用渠道抽测时间需为 HH:mm");
 				return;
@@ -1725,6 +1751,9 @@ const App = () => {
 				proxy_attempt_worker_fallback_threshold: attemptWorkerFallbackThreshold,
 				proxy_large_request_offload_threshold_bytes:
 					largeRequestOffloadThresholdBytes,
+				site_task_concurrency: siteTaskConcurrency,
+				site_task_timeout_ms: siteTaskTimeoutMs,
+				site_task_fallback_enabled: settingsForm.site_task_fallback_enabled,
 			};
 			const password = settingsForm.admin_password.trim();
 			if (password) {
@@ -2246,8 +2275,8 @@ const App = () => {
 			pushNotice(
 				result.summary.failed > 0 ? "warning" : "success",
 				result.summary.failed > 0
-					? "一键签到完成，有部分站点失败。"
-					: "一键签到完成。",
+					? "批量签到完成，有部分站点失败。"
+					: "批量签到完成。",
 			);
 		} catch (error) {
 			pushNotice("error", (error as Error).message);

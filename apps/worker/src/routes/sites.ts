@@ -11,14 +11,17 @@ import {
 	listChannels,
 	updateChannel,
 } from "../services/channel-repo";
-import { recoverDisabledChannels } from "../services/channel-recovery";
-import { runCheckinAll, runCheckinSingle } from "../services/checkin-runner";
 import { invalidateSelectionHotCache } from "../services/hot-kv";
 import {
 	buildSiteMetadata,
 	parseSiteMetadata,
 	type SiteType,
 } from "../services/site-metadata";
+import {
+	recoverDisabledChannelsViaWorker,
+	runCheckinAllViaWorker,
+	runCheckinSingleViaWorker,
+} from "../services/site-task-dispatcher";
 import { generateToken } from "../utils/crypto";
 import { jsonError } from "../utils/http";
 import { nowIso } from "../utils/time";
@@ -429,7 +432,7 @@ sites.delete("/:id", async (c) => {
 });
 
 sites.post("/checkin-all", async (c) => {
-	const result = await runCheckinAll(c.env.DB, new Date());
+	const result = await runCheckinAllViaWorker(c.env.DB, c.env, new Date());
 	return c.json({
 		results: result.results,
 		summary: result.summary,
@@ -439,7 +442,7 @@ sites.post("/checkin-all", async (c) => {
 
 sites.post("/probe-recovery", async (c) => {
 	const runsAt = new Date().toISOString();
-	const result = await recoverDisabledChannels(c.env.DB);
+	const result = await recoverDisabledChannelsViaWorker(c.env.DB, c.env);
 	if (result.recovered > 0) {
 		await invalidateSelectionHotCache(c.env.KV_HOT);
 	}
@@ -457,7 +460,7 @@ sites.post("/probe-recovery", async (c) => {
 
 sites.post("/:id/checkin", async (c) => {
 	const id = c.req.param("id");
-	const result = await runCheckinSingle(c.env.DB, id, new Date());
+	const result = await runCheckinSingleViaWorker(c.env.DB, c.env, id, new Date());
 	if (!result) {
 		return jsonError(c, 404, "site_not_found", "site_not_found");
 	}

@@ -212,12 +212,18 @@ export type RuntimeProxySettings = {
 	attempt_worker_fallback_enabled: boolean;
 	attempt_worker_fallback_threshold: number;
 	large_request_offload_threshold_bytes: number;
+	site_task_concurrency: number;
+	site_task_timeout_ms: number;
+	site_task_fallback_enabled: boolean;
 };
 
 export type RuntimeProxyConfig = RuntimeProxySettings & {
 	attempt_worker_bound: boolean;
 	attempt_worker_fallback_active: boolean;
 	attempt_worker_transport: "none" | "local_http" | "binding";
+	site_task_worker_bound: boolean;
+	site_task_worker_fallback_active: boolean;
+	site_task_worker_transport: "none" | "local_http" | "binding";
 };
 
 export type ModelChannel = {
@@ -296,6 +302,9 @@ export type SettingsForm = {
 	proxy_attempt_worker_fallback_enabled: boolean;
 	proxy_attempt_worker_fallback_threshold: string;
 	proxy_large_request_offload_threshold_bytes: string;
+	site_task_concurrency: string;
+	site_task_timeout_ms: string;
+	site_task_fallback_enabled: boolean;
 };
 
 export type TokenForm = {

@@ -79,6 +79,9 @@ export const initialSettingsForm: SettingsForm = {
 	proxy_attempt_worker_fallback_enabled: true,
 	proxy_attempt_worker_fallback_threshold: "3",
 	proxy_large_request_offload_threshold_bytes: "32768",
+	site_task_concurrency: "4",
+	site_task_timeout_ms: "12000",
+	site_task_fallback_enabled: true,
 };
 
 export const initialBackupSettings: BackupSettings = {

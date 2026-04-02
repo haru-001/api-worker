@@ -14,9 +14,9 @@ import {
 	updateChannel,
 } from "../services/channel-repo";
 import {
-	testChannelTokens,
 	updateChannelTestResult,
 } from "../services/channel-testing";
+import { executeSiteTestTask } from "../services/site-task-dispatcher";
 import { invalidateSelectionHotCache } from "../services/hot-kv";
 import { generateToken } from "../utils/crypto";
 import { jsonError } from "../utils/http";
@@ -195,7 +195,10 @@ channels.post("/:id/test", async (c) => {
 					},
 				];
 
-	const summary = await testChannelTokens(String(channel.base_url), tokens);
+	const summary = await executeSiteTestTask(c.env.DB, c.env, {
+		base_url: String(channel.base_url),
+		tokens,
+	});
 	if (!summary.ok) {
 		await updateChannelTestResult(c.env.DB, id, {
 			ok: false,

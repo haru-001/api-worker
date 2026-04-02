@@ -8,8 +8,6 @@ import {
 	computeBeijingScheduleTime,
 	computeNextBeijingRun,
 } from "../utils/time";
-import { runCheckinAll } from "./checkin-runner";
-import { recoverDisabledChannels } from "./channel-recovery";
 import { invalidateSelectionHotCache } from "./hot-kv";
 import { executeBackupSync } from "./backup-sync";
 import {
@@ -19,6 +17,10 @@ import {
 	getChannelRecoveryProbeScheduleTime,
 	getCheckinScheduleTime,
 } from "./settings";
+import {
+	recoverDisabledChannelsViaWorker,
+	runCheckinAllViaWorker,
+} from "./site-task-dispatcher";
 
 const SCHEDULER_NAME = "checkin-scheduler";
 const LAST_RUN_DATE_KEY = "last_run_date";
@@ -127,7 +129,7 @@ export class CheckinScheduler {
 		const checkinLastRunDate =
 			(await this.state.storage.get<string>(LAST_RUN_DATE_KEY)) ?? null;
 		if (shouldRunCheckin(now, checkinScheduleTime, checkinLastRunDate)) {
-			await runCheckinAll(this.env.DB, now);
+			await runCheckinAllViaWorker(this.env.DB, this.env, now);
 			await this.state.storage.put(LAST_RUN_DATE_KEY, beijingDateString(now));
 		}
 		const channelRecoveryEnabled = await getChannelRecoveryProbeEnabled(
@@ -147,7 +149,10 @@ export class CheckinScheduler {
 					channelRecoveryLastRunDate,
 				)
 			) {
-				const recoveryResult = await recoverDisabledChannels(this.env.DB);
+				const recoveryResult = await recoverDisabledChannelsViaWorker(
+					this.env.DB,
+					this.env,
+				);
 				if (recoveryResult.recovered > 0) {
 					await invalidateSelectionHotCache(this.env.KV_HOT);
 				}

@@ -3,12 +3,14 @@ import { warmupWasmCore } from "../../worker/src/wasm/core";
 import type { AppEnv } from "./env";
 import attemptRoutes from "./routes/attempt";
 import proxyRoutes from "./routes/proxy";
+import siteTaskRoutes from "./routes/site-task";
 
 const app = new Hono<AppEnv>({ strict: false });
 warmupWasmCore();
 
 app.get("/health", (c) => c.json({ ok: true }));
 app.route("/internal/attempt", attemptRoutes);
+app.route("/internal/site-task", siteTaskRoutes);
 app.route("/v1", proxyRoutes);
 app.route("/v1beta", proxyRoutes);
 

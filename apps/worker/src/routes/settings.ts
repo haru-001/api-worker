@@ -97,6 +97,9 @@ settings.put("/", async (c) => {
 		attempt_worker_fallback_enabled?: boolean;
 		attempt_worker_fallback_threshold?: number;
 		large_request_offload_threshold_bytes?: number;
+		site_task_concurrency?: number;
+		site_task_timeout_ms?: number;
+		site_task_fallback_enabled?: boolean;
 		attempt_log_enabled?: boolean;
 		attempt_log_retention_days?: number;
 	} = {};
@@ -436,6 +439,65 @@ settings.put("/", async (c) => {
 			);
 		}
 		runtimePatch.large_request_offload_threshold_bytes = thresholdBytes;
+		runtimeTouched = true;
+	}
+
+	if (body.site_task_concurrency !== undefined) {
+		const concurrency = Number(body.site_task_concurrency);
+		if (
+			Number.isNaN(concurrency) ||
+			concurrency < 1 ||
+			!Number.isInteger(concurrency)
+		) {
+			return jsonError(
+				c,
+				400,
+				"invalid_site_task_concurrency",
+				"invalid_site_task_concurrency",
+			);
+		}
+		runtimePatch.site_task_concurrency = concurrency;
+		runtimeTouched = true;
+	}
+
+	if (body.site_task_timeout_ms !== undefined) {
+		const timeoutMs = Number(body.site_task_timeout_ms);
+		if (Number.isNaN(timeoutMs) || timeoutMs < 1 || !Number.isInteger(timeoutMs)) {
+			return jsonError(
+				c,
+				400,
+				"invalid_site_task_timeout_ms",
+				"invalid_site_task_timeout_ms",
+			);
+		}
+		runtimePatch.site_task_timeout_ms = timeoutMs;
+		runtimeTouched = true;
+	}
+
+	if (body.site_task_fallback_enabled !== undefined) {
+		const raw = body.site_task_fallback_enabled;
+		let enabled: boolean | null = null;
+		if (typeof raw === "boolean") {
+			enabled = raw;
+		} else if (typeof raw === "number") {
+			enabled = raw !== 0;
+		} else if (typeof raw === "string") {
+			const normalized = raw.trim().toLowerCase();
+			if (["1", "true", "yes", "on"].includes(normalized)) {
+				enabled = true;
+			} else if (["0", "false", "no", "off"].includes(normalized)) {
+				enabled = false;
+			}
+		}
+		if (enabled === null) {
+			return jsonError(
+				c,
+				400,
+				"invalid_site_task_fallback_enabled",
+				"invalid_site_task_fallback_enabled",
+			);
+		}
+		runtimePatch.site_task_fallback_enabled = enabled;
 		runtimeTouched = true;
 	}
 

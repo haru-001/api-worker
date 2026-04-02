@@ -34,6 +34,9 @@ const DEFAULT_PROXY_ZERO_COMPLETION_AS_ERROR_ENABLED = true;
 const DEFAULT_PROXY_ATTEMPT_WORKER_FALLBACK_ENABLED = true;
 const DEFAULT_PROXY_ATTEMPT_WORKER_FALLBACK_THRESHOLD = 3;
 const DEFAULT_PROXY_LARGE_REQUEST_OFFLOAD_THRESHOLD_BYTES = 32768;
+const DEFAULT_SITE_TASK_CONCURRENCY = 4;
+const DEFAULT_SITE_TASK_TIMEOUT_MS = 12000;
+const DEFAULT_SITE_TASK_FALLBACK_ENABLED = true;
 const DEFAULT_ATTEMPT_LOG_ENABLED = true;
 const DEFAULT_ATTEMPT_LOG_RETENTION_DAYS = 30;
 const DEFAULT_BACKUP_ENABLED = false;
@@ -82,6 +85,9 @@ const PROXY_ATTEMPT_WORKER_FALLBACK_THRESHOLD_KEY =
 	"proxy_attempt_worker_fallback_threshold";
 const PROXY_LARGE_REQUEST_OFFLOAD_THRESHOLD_BYTES_KEY =
 	"proxy_large_request_offload_threshold_bytes";
+const SITE_TASK_CONCURRENCY_KEY = "site_task_concurrency";
+const SITE_TASK_TIMEOUT_MS_KEY = "site_task_timeout_ms";
+const SITE_TASK_FALLBACK_ENABLED_KEY = "site_task_fallback_enabled";
 const ATTEMPT_LOG_ENABLED_KEY = "attempt_log_enabled";
 const ATTEMPT_LOG_RETENTION_DAYS_KEY = "attempt_log_retention_days";
 const BACKUP_ENABLED_KEY = "backup_enabled";
@@ -118,6 +124,9 @@ const RUNTIME_SETTING_KEYS = [
 	PROXY_ATTEMPT_WORKER_FALLBACK_ENABLED_KEY,
 	PROXY_ATTEMPT_WORKER_FALLBACK_THRESHOLD_KEY,
 	PROXY_LARGE_REQUEST_OFFLOAD_THRESHOLD_BYTES_KEY,
+	SITE_TASK_CONCURRENCY_KEY,
+	SITE_TASK_TIMEOUT_MS_KEY,
+	SITE_TASK_FALLBACK_ENABLED_KEY,
 	ATTEMPT_LOG_ENABLED_KEY,
 	ATTEMPT_LOG_RETENTION_DAYS_KEY,
 ] as const;
@@ -155,11 +164,17 @@ export type RuntimeProxyConfig = {
 	attempt_worker_fallback_enabled: boolean;
 	attempt_worker_fallback_threshold: number;
 	large_request_offload_threshold_bytes: number;
+	site_task_concurrency: number;
+	site_task_timeout_ms: number;
+	site_task_fallback_enabled: boolean;
 	attempt_log_enabled: boolean;
 	attempt_log_retention_days: number;
 	attempt_worker_bound: boolean;
 	attempt_worker_fallback_active: boolean;
 	attempt_worker_transport: "none" | "local_http" | "binding";
+	site_task_worker_bound: boolean;
+	site_task_worker_fallback_active: boolean;
+	site_task_worker_transport: "none" | "local_http" | "binding";
 };
 
 export type ProxyRuntimeSettings = {
@@ -181,6 +196,9 @@ export type ProxyRuntimeSettings = {
 	attempt_worker_fallback_enabled: boolean;
 	attempt_worker_fallback_threshold: number;
 	large_request_offload_threshold_bytes: number;
+	site_task_concurrency: number;
+	site_task_timeout_ms: number;
+	site_task_fallback_enabled: boolean;
 	attempt_log_enabled: boolean;
 	attempt_log_retention_days: number;
 };
@@ -488,6 +506,18 @@ export async function getProxyRuntimeSettings(
 			settings[PROXY_LARGE_REQUEST_OFFLOAD_THRESHOLD_BYTES_KEY] ?? null,
 			DEFAULT_PROXY_LARGE_REQUEST_OFFLOAD_THRESHOLD_BYTES,
 		),
+		site_task_concurrency: parsePositiveSetting(
+			settings[SITE_TASK_CONCURRENCY_KEY] ?? null,
+			DEFAULT_SITE_TASK_CONCURRENCY,
+		),
+		site_task_timeout_ms: parsePositiveSetting(
+			settings[SITE_TASK_TIMEOUT_MS_KEY] ?? null,
+			DEFAULT_SITE_TASK_TIMEOUT_MS,
+		),
+		site_task_fallback_enabled: parseBooleanSetting(
+			settings[SITE_TASK_FALLBACK_ENABLED_KEY] ?? null,
+			DEFAULT_SITE_TASK_FALLBACK_ENABLED,
+		),
 		attempt_log_enabled: parseBooleanSetting(
 			settings[ATTEMPT_LOG_ENABLED_KEY] ?? null,
 			DEFAULT_ATTEMPT_LOG_ENABLED,
@@ -516,18 +546,30 @@ function resolveAttemptWorkerTransport(
 	return "none";
 }
 
+function resolveSiteTaskWorkerTransport(
+	env: Bindings,
+): RuntimeProxyConfig["site_task_worker_transport"] {
+	return resolveAttemptWorkerTransport(env);
+}
+
 export function getRuntimeProxyConfig(
 	env: Bindings,
 	settings: ProxyRuntimeSettings,
 ): RuntimeProxyConfig {
 	const attemptWorkerTransport = resolveAttemptWorkerTransport(env);
 	const attemptWorkerBound = attemptWorkerTransport !== "none";
+	const siteTaskWorkerTransport = resolveSiteTaskWorkerTransport(env);
+	const siteTaskWorkerBound = siteTaskWorkerTransport !== "none";
 	return {
 		...settings,
 		attempt_worker_bound: attemptWorkerBound,
 		attempt_worker_fallback_active:
 			attemptWorkerBound && settings.attempt_worker_fallback_enabled,
 		attempt_worker_transport: attemptWorkerTransport,
+		site_task_worker_bound: siteTaskWorkerBound,
+		site_task_worker_fallback_active:
+			siteTaskWorkerBound && settings.site_task_fallback_enabled,
+		site_task_worker_transport: siteTaskWorkerTransport,
 	};
 }
 
@@ -705,6 +747,33 @@ export async function setProxyRuntimeSettings(
 				String(
 					Math.max(0, Math.floor(update.large_request_offload_threshold_bytes)),
 				),
+			),
+		);
+	}
+	if (update.site_task_concurrency !== undefined) {
+		tasks.push(
+			upsertSetting(
+				db,
+				SITE_TASK_CONCURRENCY_KEY,
+				String(Math.max(1, Math.floor(update.site_task_concurrency))),
+			),
+		);
+	}
+	if (update.site_task_timeout_ms !== undefined) {
+		tasks.push(
+			upsertSetting(
+				db,
+				SITE_TASK_TIMEOUT_MS_KEY,
+				String(Math.max(1, Math.floor(update.site_task_timeout_ms))),
+			),
+		);
+	}
+	if (update.site_task_fallback_enabled !== undefined) {
+		tasks.push(
+			upsertSetting(
+				db,
+				SITE_TASK_FALLBACK_ENABLED_KEY,
+				update.site_task_fallback_enabled ? "1" : "0",
 			),
 		);
 	}
