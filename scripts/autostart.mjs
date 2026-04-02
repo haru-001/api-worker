@@ -1,11 +1,6 @@
 #!/usr/bin/env node
-import {
-	existsSync,
-	mkdirSync,
-	readFileSync,
-	rmSync,
-	writeFileSync,
-} from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
@@ -14,46 +9,8 @@ const rawArgs = process.argv.slice(2);
 const action = rawArgs[0]?.trim().toLowerCase() ?? "interactive";
 const devArgs = rawArgs.slice(1);
 
-const startupFileName = "api-worker-dev-autostart.cmd";
+const autostartTaskName = "api-worker-dev-autostart";
 const repoRoot = process.cwd();
-
-const quoteCmdArg = (arg) => {
-	if (/[\s"]/u.test(arg)) {
-		return `"${arg.replace(/"/g, '""')}"`;
-	}
-	return arg;
-};
-
-const resolveBunCommand = () => {
-	if (process.env.BUN_BIN && existsSync(process.env.BUN_BIN)) {
-		return process.env.BUN_BIN;
-	}
-	const npmExec = process.env.npm_execpath;
-	if (npmExec?.toLowerCase().includes("bun")) {
-		return npmExec;
-	}
-	if (process.env.BUN_INSTALL) {
-		const candidate = path.join(
-			process.env.BUN_INSTALL,
-			"bin",
-			process.platform === "win32" ? "bun.exe" : "bun",
-		);
-		if (existsSync(candidate)) {
-			return candidate;
-		}
-	}
-	return "bun";
-};
-
-const printUsage = () => {
-	console.log("用法:");
-	console.log("  bun run autostart");
-	console.log(
-		"  bun run autostart -- enable [dev 参数，空格分隔，例如 --no-ui --remote-d1]",
-	);
-	console.log("  bun run autostart -- disable");
-	console.log("  bun run autostart -- status");
-};
 
 const interactiveEnableOptions = [
 	{ flag: "--no-ui", label: "关闭热加载 UI" },
@@ -71,6 +28,89 @@ const uiBuildModeOptions = [
 		flags: ["--skip-ui-build"],
 	},
 ];
+
+const backgroundLogModeOptions = [
+	{ mode: "1", label: "写入日志文件（默认）", flags: [] },
+	{
+		mode: "2",
+		label: "关闭后台日志（--log-mode none）",
+		flags: ["--log-mode", "none"],
+	},
+];
+
+const escapeForSingleQuotedPowerShell = (value) =>
+	String(value).replace(/'/g, "''");
+
+const quoteWindowsArgument = (arg) => {
+	const text = String(arg);
+	if (text.length === 0) {
+		return '""';
+	}
+	if (!/[\s"]/u.test(text)) {
+		return text;
+	}
+	return `"${text.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/g, "$1$1")}"`;
+};
+
+const normalizeDevArgs = (args) =>
+	args
+		.filter(Boolean)
+		.map((item) => item.trim())
+		.filter((item) => item.length > 0 && item !== "--bg");
+
+const buildTaskArguments = (args) => {
+	const normalizedArgs = normalizeDevArgs(args);
+	return ["run", "dev", "--", ...normalizedArgs, "--bg"];
+};
+
+const encodePowerShellCommand = (script) =>
+	Buffer.from(script, "utf16le").toString("base64");
+
+const resolveBunCommand = () => {
+	if (process.env.BUN_BIN && existsSync(process.env.BUN_BIN)) {
+		return process.env.BUN_BIN;
+	}
+	const npmExec = process.env.npm_execpath;
+	if (npmExec && existsSync(npmExec)) {
+		const npmExecBaseName = path.basename(npmExec).toLowerCase();
+		if (npmExecBaseName === "bun" || npmExecBaseName === "bun.exe") {
+			return npmExec;
+		}
+	}
+	if (process.env.BUN_INSTALL) {
+		const candidate = path.join(
+			process.env.BUN_INSTALL,
+			"bin",
+			process.platform === "win32" ? "bun.exe" : "bun",
+		);
+		if (existsSync(candidate)) {
+			return candidate;
+		}
+	}
+	if (process.platform === "win32") {
+		const whereResult = spawnSync("where.exe", ["bun"], { encoding: "utf8" });
+		if (whereResult.status === 0) {
+			const firstMatch = whereResult.stdout
+				.split(/\r?\n/u)
+				.map((item) => item.trim())
+				.find(Boolean);
+			if (firstMatch) {
+				return firstMatch;
+			}
+		}
+	}
+	return "bun";
+};
+
+const printUsage = () => {
+	console.log("用法:");
+	console.log("  bun run autostart");
+	console.log(
+		"  bun run autostart -- enable [dev 参数，空格分隔，例如 --no-ui --remote-d1]",
+	);
+	console.log("  bun run autostart -- disable");
+	console.log("  bun run autostart -- status");
+};
 
 const parseInteractiveSelection = (raw, maxIndex) => {
 	const text = String(raw ?? "").trim();
@@ -113,84 +153,156 @@ const parseUiBuildModeArgs = (selection) => {
 	return matched.flags;
 };
 
+const parseBackgroundLogModeArgs = (selection) => {
+	const mode = String(selection ?? "").trim();
+	if (mode.length === 0) {
+		return [];
+	}
+	const matched = backgroundLogModeOptions.find((item) => item.mode === mode);
+	if (!matched) {
+		throw new Error("后台日志策略无效，请输入 1 / 2。");
+	}
+	return matched.flags;
+};
+
 const ensureWindows = () => {
 	if (process.platform !== "win32") {
 		throw new Error("当前仅支持 Windows 自启动脚本。");
 	}
-	if (!process.env.APPDATA) {
-		throw new Error("未找到 APPDATA 环境变量，无法定位启动目录。");
-	}
 };
 
-const getStartupFilePath = () => {
-	ensureWindows();
-	const startupDir = path.join(
-		process.env.APPDATA,
-		"Microsoft",
-		"Windows",
-		"Start Menu",
-		"Programs",
-		"Startup",
+const runPowerShell = (script) => {
+	const encodedCommand = Buffer.from(script, "utf16le").toString("base64");
+	const result = spawnSync(
+		"powershell.exe",
+		["-NoProfile", "-NonInteractive", "-EncodedCommand", encodedCommand],
+		{ encoding: "utf8" },
 	);
-	mkdirSync(startupDir, { recursive: true });
-	return path.join(startupDir, startupFileName);
+	if (result.error) {
+		throw result.error;
+	}
+	if (result.status !== 0) {
+		const errorText = result.stderr?.trim() || result.stdout?.trim();
+		throw new Error(errorText || "PowerShell 执行失败。");
+	}
+	return result.stdout.trim();
 };
 
-const renderStartupCmd = (bunCommand, args) => {
-	const normalizedArgs = [
-		...args.filter(Boolean).map((item) => item.trim()),
-	].filter((item) => item.length > 0 && item !== "--bg");
-	const finalArgs = [...normalizedArgs, "--bg"];
-	const finalArgsText = finalArgs.map((item) => quoteCmdArg(item)).join(" ");
-	const devCommand = `${quoteCmdArg(bunCommand)} run dev -- ${finalArgsText}`;
-	return [
-		"@echo off",
-		"setlocal",
-		`cd /d "${repoRoot}"`,
-		`${devCommand}`,
-		"endlocal",
-		"",
-	].join("\r\n");
+const runPowerShellJson = (script) => {
+	const stdout = runPowerShell(script);
+	if (!stdout) {
+		return null;
+	}
+	return JSON.parse(stdout);
+};
+
+const buildScheduledTaskLauncher = (args) => {
+	const bunCommand = resolveBunCommand();
+	const taskArgs = buildTaskArguments(args);
+	const escapedBunCommand = escapeForSingleQuotedPowerShell(bunCommand);
+	const escapedRepoRoot = escapeForSingleQuotedPowerShell(repoRoot);
+	const argumentList = taskArgs
+		.map((item) => `'${escapeForSingleQuotedPowerShell(item)}'`)
+		.join(", ");
+	const hiddenLauncherScript = [
+		"$ErrorActionPreference = 'Stop'",
+		`Start-Process -FilePath '${escapedBunCommand}' -ArgumentList @(${argumentList}) -WorkingDirectory '${escapedRepoRoot}' -WindowStyle Hidden`,
+	].join("\n");
+
+	return {
+		execute: "powershell.exe",
+		arguments: `-NoProfile -NonInteractive -WindowStyle Hidden -EncodedCommand ${encodePowerShellCommand(hiddenLauncherScript)}`,
+	};
+};
+
+const getAutostartTaskInfo = () => {
+	ensureWindows();
+	const taskName = escapeForSingleQuotedPowerShell(autostartTaskName);
+	return runPowerShellJson(`
+$ErrorActionPreference = 'Stop'
+$task = Get-ScheduledTask -TaskName '${taskName}' -ErrorAction SilentlyContinue
+if ($null -eq $task) {
+  [pscustomobject]@{
+    enabled = $false
+  } | ConvertTo-Json -Compress
+  return
+}
+$action = $task.Actions | Select-Object -First 1
+[pscustomobject]@{
+  enabled = $true
+  taskName = $task.TaskName
+  state = [string]$task.State
+  execute = $action.Execute
+  arguments = $action.Arguments
+  workingDirectory = $action.WorkingDirectory
+} | ConvertTo-Json -Compress
+`);
 };
 
 const enableAutostart = (args) => {
-	const startupFilePath = getStartupFilePath();
-	const bunCommand = resolveBunCommand();
-	writeFileSync(startupFilePath, renderStartupCmd(bunCommand, args), "utf8");
+	ensureWindows();
+	const escapedTaskName = escapeForSingleQuotedPowerShell(autostartTaskName);
+	const launcher = buildScheduledTaskLauncher(args);
+	const escapedExecute = escapeForSingleQuotedPowerShell(launcher.execute);
+	const escapedArguments = escapeForSingleQuotedPowerShell(launcher.arguments);
+	const escapedRepoRoot = escapeForSingleQuotedPowerShell(repoRoot);
+
+	const result = runPowerShellJson(`
+$ErrorActionPreference = 'Stop'
+$userId = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+$action = New-ScheduledTaskAction -Execute '${escapedExecute}' -Argument '${escapedArguments}' -WorkingDirectory '${escapedRepoRoot}'
+$trigger = New-ScheduledTaskTrigger -AtLogOn
+$principal = New-ScheduledTaskPrincipal -UserId $userId -LogonType Interactive -RunLevel Limited
+$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero)
+Register-ScheduledTask -TaskName '${escapedTaskName}' -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Description 'api-worker 开发服务自启动' -Force | Out-Null
+[pscustomobject]@{
+  taskName = '${escapedTaskName}'
+  execute = $action.Execute
+  arguments = $action.Arguments
+  workingDirectory = $action.WorkingDirectory
+} | ConvertTo-Json -Compress
+`);
+
 	console.log("✅ 已开启自启动。");
-	console.log(`启动文件: ${startupFilePath}`);
-	console.log(
-		`启动参数: ${args.length > 0 ? `${args.join(" ")} --bg` : "--bg"}`,
-	);
+	console.log(`计划任务: ${result.taskName}`);
+	console.log(`程序: ${result.execute}（隐藏启动器）`);
+	console.log(`参数: ${result.arguments}`);
+	console.log(`工作目录: ${result.workingDirectory}`);
 };
 
 const disableAutostart = () => {
-	const startupFilePath = getStartupFilePath();
-	if (existsSync(startupFilePath)) {
-		rmSync(startupFilePath);
+	ensureWindows();
+	const taskName = escapeForSingleQuotedPowerShell(autostartTaskName);
+	const result = runPowerShellJson(`
+$ErrorActionPreference = 'Stop'
+$task = Get-ScheduledTask -TaskName '${taskName}' -ErrorAction SilentlyContinue
+if ($null -eq $task) {
+  [pscustomobject]@{ removed = $false } | ConvertTo-Json -Compress
+  return
+}
+Unregister-ScheduledTask -TaskName '${taskName}' -Confirm:$false
+[pscustomobject]@{ removed = $true } | ConvertTo-Json -Compress
+`);
+	if (result?.removed) {
 		console.log("✅ 已关闭自启动。");
-		console.log(`已删除: ${startupFilePath}`);
+		console.log(`已删除计划任务: ${autostartTaskName}`);
 		return;
 	}
 	console.log("ℹ️ 当前未开启自启动。");
 };
 
 const showStatus = () => {
-	const startupFilePath = getStartupFilePath();
-	if (!existsSync(startupFilePath)) {
+	const task = getAutostartTaskInfo();
+	if (!task?.enabled) {
 		console.log("ℹ️ 自启动状态：未开启。");
 		return;
 	}
-	const content = readFileSync(startupFilePath, "utf8");
-	const commandLine = content
-		.split(/\r?\n/u)
-		.find((line) => line.includes(" run dev -- "))
-		?.trim();
 	console.log("✅ 自启动状态：已开启。");
-	console.log(`启动文件: ${startupFilePath}`);
-	if (commandLine) {
-		console.log(`命令: ${commandLine}`);
-	}
+	console.log(`计划任务: ${task.taskName}`);
+	console.log(`任务状态: ${task.state}`);
+	console.log(`程序: ${task.execute}`);
+	console.log(`参数: ${task.arguments}`);
+	console.log(`工作目录: ${task.workingDirectory}`);
 };
 
 const runInteractive = async () => {
@@ -231,7 +343,17 @@ const runInteractive = async () => {
 					"请选择 UI 预构建策略（默认 2）: ",
 				);
 				const uiBuildArgs = parseUiBuildModeArgs(uiBuildMode);
-				const finalArgs = [...args, ...uiBuildArgs];
+				console.log("");
+				console.log("后台日志策略（单选）:");
+				for (const option of backgroundLogModeOptions) {
+					console.log(`${option.mode}. ${option.label}`);
+				}
+				const logMode = await rl.question("请选择后台日志策略（默认 1）: ");
+				const finalArgs = [
+					...args,
+					...uiBuildArgs,
+					...parseBackgroundLogModeArgs(logMode),
+				];
 				enableAutostart(finalArgs);
 				return;
 			}

@@ -14,9 +14,5 @@ test-results
 
 .helloagents/plan
 .helloagents/archive
-apps/worker/.wrangler.remote.toml
-apps/attempt-worker/.wrangler.remote.toml
-apps/worker/.wrangler.local.no-hot-cache.toml
-apps/worker/.wrangler.remote.no-hot-cache.toml
-apps/attempt-worker/.wrangler.local.no-hot-cache.toml
-apps/attempt-worker/.wrangler.remote.no-hot-cache.toml
+apps/worker/.wrangler*.toml
+apps/attempt-worker/.wrangler*.toml

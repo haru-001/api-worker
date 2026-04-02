@@ -18,6 +18,7 @@
 | checkin | 签到站点管理 | 🚧 | [checkin.md](./checkin.md) |
 | admin-ui | 管理台前端 | 🚧 | [admin-ui.md](./admin-ui.md) |
 | deploy-workflow | GitHub Actions 部署流程 | 🚧 | [deploy-workflow.md](./deploy-workflow.md) |
+| tooling | 本地开发与自启动脚本 | 🚧 | [tooling.md](./tooling.md) |
 
 ## 模块依赖关系
 
@@ -29,6 +30,7 @@ dashboard → usage, tokens
 models → channels
 usage → settings
 deploy-workflow → admin-ui, worker
+tooling → admin-ui, deploy-workflow
 ```
 
 ## 状态说明

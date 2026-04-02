@@ -137,7 +137,8 @@ bun run dev -- [可选参数]
 - `--no-hot-cache`：仅禁用 `KV_HOT` 热缓存（不影响其他内存级缓存）
 - `--build-ui`：启动前先构建 UI（`bun run build:ui`）
 - `--skip-ui-build`：跳过 UI 预构建（用于覆盖 `--build-ui` 默认行为）
-- `--bg`：后台启动（日志写入 `.dev/dev-runner.log`）
+- `--bg`：后台启动
+- `--log-mode file|none`：后台日志策略（默认 `file`，写入 `.dev/dev-runner.log`；`none` 表示不写后台日志）
 - `--status`：查看后台运行状态
 - `--stop`：停止后台运行实例
 
@@ -149,6 +150,7 @@ bun run dev -- [可选参数]
 - 默认启动 + 云端 D1/KV：`bun run dev -- --remote-d1`
 - 仅主 Worker + 云端 D1/KV + 禁用热缓存：`bun run dev -- --no-attempt-worker --no-ui --remote-d1 --no-hot-cache`
 - 后台启动（仅主 Worker + 云端 D1/KV + 禁用热缓存）：`bun run dev -- --no-attempt-worker --no-ui --remote-d1 --no-hot-cache --bg`
+- 后台启动且不写日志：`bun run dev -- --no-attempt-worker --no-ui --remote-d1 --bg --log-mode none`
 - 远端预览执行：`bun run dev -- --remote-worker`
 - 查看后台状态：`bun run dev -- --status`
 - 停止后台实例：`bun run dev -- --stop`
@@ -159,7 +161,10 @@ bun run dev -- [可选参数]
 - 开启自启动：`bun run autostart -- enable [dev 参数，空格分隔]`
 - 关闭自启动：`bun run autostart -- disable`
 - 查看状态：`bun run autostart -- status`
-- 示例：`bun run autostart -- enable --no-attempt-worker --remote-d1 --no-ui`
+- 示例：`bun run autostart -- enable --no-attempt-worker --remote-d1 --no-ui --log-mode none`
+- 自启动方式：使用 Windows 计划任务，不再写入 Startup `.cmd`
+- 为避免 `bun.exe` 作为控制台程序拉起窗口，计划任务会先通过隐藏的 PowerShell 启动器再执行 `bun run dev -- --bg`
+- 登录后真正拉起 Worker / Wrangler / UI 的后台守护分支同样会继续使用隐藏窗口 + 显式 stdio 重定向策略
 
 快捷命令（仅主 Worker + 禁用热缓存）：
 
@@ -228,7 +233,9 @@ bun run autostart -- status
 - 默认情况下主 worker 会优先走本地 `attempt-worker`（`http://127.0.0.1:<DEV_ATTEMPT_WORKER_PORT>`）
 - 只有显式传入 `--remote-worker` 时，主 worker / attempt-worker 才会改走远端预览执行
 - `--no-hot-cache` 会额外生成 no-hot 配置并移除 `KV_HOT` 绑定，仅影响热缓存路径
-- 这两个文件已加入 `.gitignore`，不会入库
+- 通过根目录 `bun run dev` / `bun run autostart` 触发的运行时配置会统一写入 `.dev/generated/wrangler/`
+- 直接执行 `prepare:remote-config` / `prepare:no-hot-cache-config` 时，默认仍写入各应用目录；如需统一输出，可追加 `--output-root .dev/generated/wrangler`
+- 这些临时文件已加入 `.gitignore`，不会入库
 - 如需单独启动服务，可用 `bun --cwd apps/worker run dev:remote` 与 `bun --cwd apps/attempt-worker run dev:remote`
 - 想切回本地数据库时，继续使用 `bun run dev` + `bun run --filter api-worker db:migrate`
 

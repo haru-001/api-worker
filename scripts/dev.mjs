@@ -42,7 +42,10 @@ const scriptPath = fileURLToPath(import.meta.url);
 const stateDir = path.join(process.cwd(), ".dev");
 const statePath = path.join(stateDir, "dev-runner.json");
 const logPath = path.join(stateDir, "dev-runner.log");
+const generatedWranglerRoot = path.join(stateDir, "generated", "wrangler");
 const workerAppDir = path.join(process.cwd(), "apps/worker");
+const attemptWorkerAppDir = path.join(process.cwd(), "apps/attempt-worker");
+const nullDevicePath = process.platform === "win32" ? "NUL" : "/dev/null";
 
 const rawArgs = process.argv.slice(2);
 const interactiveDelegatedMode = rawArgs.includes("--_interactive-run");
@@ -51,6 +54,33 @@ const daemonMode = runtimeArgs.includes("--_daemon");
 const backgroundMode = runtimeArgs.includes("--bg");
 const statusMode = runtimeArgs.includes("--status");
 const stopMode = runtimeArgs.includes("--stop");
+
+const parseOptionValue = (args, flag, defaultValue) => {
+	let value = defaultValue;
+	for (let index = 0; index < args.length; index += 1) {
+		if (args[index] !== flag) {
+			continue;
+		}
+		const nextValue = args[index + 1];
+		if (!nextValue || nextValue.startsWith("--")) {
+			throw new Error(`${flag} 需要提供参数值`);
+		}
+		value = nextValue.trim();
+		index += 1;
+	}
+	return value;
+};
+
+const logMode = parseOptionValue(runtimeArgs, "--log-mode", "file");
+if (!["file", "none"].includes(logMode)) {
+	throw new Error("--log-mode 仅支持 file / none");
+}
+const shouldHideBackgroundWindows = process.platform === "win32" && daemonMode;
+const backgroundOutputPath = daemonMode
+	? logMode === "none"
+		? nullDevicePath
+		: logPath
+	: null;
 
 const useRemoteWorker = runtimeArgs.includes("--remote-worker");
 const useRemoteD1 = runtimeArgs.includes("--remote-d1") || useRemoteWorker;
@@ -77,6 +107,15 @@ const devInteractiveUiBuildOptions = [
 		mode: "2",
 		label: "跳过 UI 预构建（--skip-ui-build）",
 		flags: ["--skip-ui-build"],
+	},
+];
+
+const backgroundLogModeOptions = [
+	{ mode: "1", label: "写入日志文件（默认）", flags: [] },
+	{
+		mode: "2",
+		label: "关闭后台日志（--log-mode none）",
+		flags: ["--log-mode", "none"],
 	},
 ];
 
@@ -151,6 +190,18 @@ const parseUiBuildModeArgs = (selection) => {
 	return matched.flags;
 };
 
+const parseBackgroundLogModeArgs = (selection) => {
+	const mode = String(selection ?? "").trim();
+	if (mode.length === 0) {
+		return [];
+	}
+	const matched = backgroundLogModeOptions.find((item) => item.mode === mode);
+	if (!matched) {
+		throw new Error("后台日志策略无效，请输入 1 / 2。");
+	}
+	return matched.flags;
+};
+
 const promptInteractiveRunArgs = async () => {
 	const rl = createInterface({
 		input: process.stdin,
@@ -206,6 +257,15 @@ const promptInteractiveRunArgs = async () => {
 					.toLowerCase();
 				if (runMode === "2") {
 					args.push("--bg");
+					console.log("");
+					console.log("后台日志策略（单选）:");
+					for (const option of backgroundLogModeOptions) {
+						console.log(`${option.mode}. ${option.label}`);
+					}
+					const backgroundLogMode = await rl.question(
+						"请选择后台日志策略（默认 1）: ",
+					);
+					args.push(...parseBackgroundLogModeArgs(backgroundLogMode));
 				} else if (runMode.length > 0 && runMode !== "1") {
 					throw new Error("启动方式无效，请输入 1 / 2。");
 				}
@@ -335,9 +395,32 @@ const shutdown = (code = 0) => {
 	process.exit(code);
 };
 
+const createSpawnStdio = () => {
+	if (!daemonMode || !backgroundOutputPath) {
+		return {
+			stdio: "inherit",
+			close: () => {},
+		};
+	}
+	const stdoutFd = openSync(backgroundOutputPath, "a");
+	const stderrFd = openSync(backgroundOutputPath, "a");
+	return {
+		stdio: ["ignore", stdoutFd, stderrFd],
+		close: () => {
+			closeSync(stdoutFd);
+			closeSync(stderrFd);
+		},
+	};
+};
+
 const runOnce = (command, args, name) =>
 	new Promise((resolve, reject) => {
-		const child = spawn(command, args, { stdio: "inherit" });
+		const spawnStdio = createSpawnStdio();
+		const child = spawn(command, args, {
+			stdio: spawnStdio.stdio,
+			windowsHide: shouldHideBackgroundWindows,
+		});
+		spawnStdio.close();
 		child.on("error", (error) => {
 			if (error.code === "ENOENT") {
 				reject(
@@ -363,17 +446,30 @@ const runBunScript = (name, args) =>
 
 const prepareConfigs = async () => {
 	if (useRemoteD1) {
-		await runBunScript("prepare:remote-config", ["--", "--only", "worker"]);
+		await runBunScript("prepare:remote-config", [
+			"--",
+			"--only",
+			"worker",
+			"--output-root",
+			generatedWranglerRoot,
+		]);
 		if (!skipAttemptWorker) {
 			await runBunScript("prepare:remote-config", [
 				"--",
 				"--only",
 				"attempt-worker",
+				"--output-root",
+				generatedWranglerRoot,
 			]);
 		}
 	}
 	if (disableHotCache) {
-		const baseArgs = useRemoteD1 ? ["--", "--remote"] : ["--"];
+		const baseArgs = [
+			"--",
+			"--output-root",
+			generatedWranglerRoot,
+			...(useRemoteD1 ? ["--remote"] : []),
+		];
 		await runBunScript("prepare:no-hot-cache-config", [
 			...baseArgs,
 			"--only",
@@ -418,15 +514,21 @@ const stripNamedBlock = (sourceText, header) => {
 	return `${output.join("\n").replace(/\n+$/u, "")}\n`;
 };
 
+const resolveGeneratedConfigPath = (target, filename) =>
+	path.join(generatedWranglerRoot, target, filename);
+
 const resolveWorkerBaseConfig = () => {
 	if (useRemoteD1) {
 		return disableHotCache
-			? ".wrangler.remote.no-hot-cache.toml"
-			: ".wrangler.remote.toml";
+			? resolveGeneratedConfigPath(
+					"worker",
+					".wrangler.remote.no-hot-cache.toml",
+				)
+			: resolveGeneratedConfigPath("worker", ".wrangler.remote.toml");
 	}
 	return disableHotCache
-		? ".wrangler.local.no-hot-cache.toml"
-		: "wrangler.toml";
+		? resolveGeneratedConfigPath("worker", ".wrangler.local.no-hot-cache.toml")
+		: path.join(workerAppDir, "wrangler.toml");
 };
 
 const ensureWorkerConfigForRun = () => {
@@ -434,8 +536,7 @@ const ensureWorkerConfigForRun = () => {
 	if (!skipAttemptWorker) {
 		return baseConfig;
 	}
-	const sourcePath = path.join(workerAppDir, baseConfig);
-	const sourceText = readFileSync(sourcePath, "utf8");
+	const sourceText = readFileSync(baseConfig, "utf8");
 	const strippedText = stripNamedBlock(sourceText, "[[services]]");
 	const outputName = useRemoteD1
 		? disableHotCache
@@ -444,8 +545,10 @@ const ensureWorkerConfigForRun = () => {
 		: disableHotCache
 			? ".wrangler.local.no-hot-cache.no-attempt-worker.toml"
 			: ".wrangler.local.no-attempt-worker.toml";
-	writeFileSync(path.join(workerAppDir, outputName), strippedText, "utf8");
-	return outputName;
+	const outputPath = resolveGeneratedConfigPath("worker", outputName);
+	mkdirSync(path.dirname(outputPath), { recursive: true });
+	writeFileSync(outputPath, strippedText, "utf8");
+	return outputPath;
 };
 
 const buildCommands = () => {
@@ -456,11 +559,23 @@ const buildCommands = () => {
 			attemptWranglerArgs.push(
 				"--config",
 				disableHotCache
-					? ".wrangler.remote.no-hot-cache.toml"
-					: ".wrangler.remote.toml",
+					? resolveGeneratedConfigPath(
+							"attempt-worker",
+							".wrangler.remote.no-hot-cache.toml",
+						)
+					: resolveGeneratedConfigPath(
+							"attempt-worker",
+							".wrangler.remote.toml",
+						),
 			);
 		} else if (disableHotCache) {
-			attemptWranglerArgs.push("--config", ".wrangler.local.no-hot-cache.toml");
+			attemptWranglerArgs.push(
+				"--config",
+				resolveGeneratedConfigPath(
+					"attempt-worker",
+					".wrangler.local.no-hot-cache.toml",
+				),
+			);
 		}
 		if (useRemoteWorker) {
 			attemptWranglerArgs.push("--remote");
@@ -470,7 +585,7 @@ const buildCommands = () => {
 			name: "attempt-worker",
 			cmd: BUN_CMD,
 			args: ["x", "wrangler", ...attemptWranglerArgs],
-			cwd: path.join(process.cwd(), "apps/attempt-worker"),
+			cwd: attemptWorkerAppDir,
 		});
 	}
 	const workerWranglerArgs = ["dev", "--port", String(workerPort)];
@@ -510,10 +625,13 @@ const buildCommands = () => {
 
 const startLongRunningCommands = (commands) => {
 	for (const command of commands) {
+		const spawnStdio = createSpawnStdio();
 		const child = spawn(command.cmd, command.args, {
-			stdio: "inherit",
+			stdio: spawnStdio.stdio,
 			cwd: command.cwd ?? process.cwd(),
+			windowsHide: shouldHideBackgroundWindows,
 		});
+		spawnStdio.close();
 		children.set(command.name, child);
 		child.on("error", (error) => {
 			if (error.code === "ENOENT") {
@@ -548,14 +666,15 @@ const printStatus = () => {
 	const state = readLiveState();
 	if (!state) {
 		console.log("ℹ️ 后台 dev 未运行。");
-		console.log(`日志文件: ${logPath}`);
+		console.log(`默认日志文件: ${logPath}`);
 		return;
 	}
 	console.log("✅ 后台 dev 正在运行。");
 	console.log(`PID: ${state.pid}`);
 	console.log(`启动时间: ${state.startedAt}`);
 	console.log(`参数: ${state.args.join(" ") || "(无)"}`);
-	console.log(`日志文件: ${state.logPath}`);
+	console.log(`日志模式: ${state.logMode ?? "file"}`);
+	console.log(`日志文件: ${state.logPath ?? "(已关闭)"}`);
 };
 
 const stopBackground = async () => {
@@ -573,7 +692,8 @@ const startBackground = () => {
 	const current = readLiveState();
 	if (current) {
 		printSync(`ℹ️ 后台 dev 已在运行（PID ${current.pid}）。`);
-		printSync(`日志文件: ${current.logPath}`);
+		printSync(`日志模式: ${current.logMode ?? "file"}`);
+		printSync(`日志文件: ${current.logPath ?? "(已关闭)"}`);
 		return;
 	}
 
@@ -581,8 +701,9 @@ const startBackground = () => {
 	const cleanArgs = runtimeArgs.filter(
 		(arg) => arg !== "--bg" && arg !== "--_daemon",
 	);
-	const stdoutFd = openSync(logPath, "a");
-	const stderrFd = openSync(logPath, "a");
+	const outputPath = logMode === "none" ? nullDevicePath : logPath;
+	const stdoutFd = openSync(outputPath, "a");
+	const stderrFd = openSync(outputPath, "a");
 	const child = spawn(
 		process.execPath,
 		[scriptPath, ...cleanArgs, "--_daemon"],
@@ -602,10 +723,12 @@ const startBackground = () => {
 		pid: child.pid,
 		args: cleanArgs,
 		startedAt: new Date().toISOString(),
-		logPath,
+		logMode,
+		logPath: logMode === "file" ? logPath : null,
 	});
 	printSync(`✅ 已后台启动 dev（PID ${child.pid}）。`);
-	printSync(`日志文件: ${logPath}`);
+	printSync(`日志模式: ${logMode}`);
+	printSync(`日志文件: ${logMode === "file" ? logPath : "(已关闭)"}`);
 	printSync(`查看状态: bun run dev -- --status`);
 	printSync(`停止服务: bun run dev -- --stop`);
 };
@@ -661,7 +784,8 @@ const main = async () => {
 			pid: process.pid,
 			args: runtimeArgs.filter((arg) => arg !== "--_daemon"),
 			startedAt: new Date().toISOString(),
-			logPath,
+			logMode,
+			logPath: logMode === "file" ? logPath : null,
 		});
 	}
 

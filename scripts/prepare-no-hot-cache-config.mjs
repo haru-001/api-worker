@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -24,6 +24,7 @@ const parseArgs = () => {
 	const args = process.argv.slice(2);
 	let only = "all";
 	let remote = false;
+	let outputRoot = "";
 
 	for (let index = 0; index < args.length; index += 1) {
 		const arg = args[index];
@@ -37,6 +38,14 @@ const parseArgs = () => {
 		}
 		if (arg === "--remote") {
 			remote = true;
+			continue;
+		}
+		if (arg === "--output-root") {
+			const value = args[index + 1];
+			if (value) {
+				outputRoot = value;
+				index += 1;
+			}
 		}
 	}
 
@@ -49,10 +58,29 @@ const parseArgs = () => {
 		throw new Error("--only 仅支持 worker / attempt-worker / all");
 	}
 
-	return { selectedTargets, remote };
+	return { selectedTargets, remote, outputRoot };
 };
 
-const resolvePath = (relativePath) => path.join(ROOT, relativePath);
+const resolveDefaultPath = (relativePath) => path.join(ROOT, relativePath);
+
+const resolveOutputPath = (target, relativePath, outputRoot) => {
+	if (!outputRoot) {
+		return resolveDefaultPath(relativePath);
+	}
+	return path.resolve(outputRoot, target, path.basename(relativePath));
+};
+
+const resolveSourcePath = (
+	target,
+	relativePath,
+	outputRoot,
+	preferOutputRoot,
+) => {
+	if (preferOutputRoot && outputRoot) {
+		return resolveOutputPath(target, relativePath, outputRoot);
+	}
+	return resolveDefaultPath(relativePath);
+};
 
 const stripKvNamespacesBlock = (source) => {
 	const lines = source.split(/\r?\n/u);
@@ -78,8 +106,32 @@ const stripKvNamespacesBlock = (source) => {
 	return `${output.join("\n").replace(/\n+$/u, "")}\n`;
 };
 
+const toTomlLiteralPath = (filePath) =>
+	`'${path.resolve(filePath).replace(/'/g, "''")}'`;
+
+const rewriteConfigPathsForExternalOutput = (sourceText, sourceDir) => {
+	const rewriteMaybeRelative = (rawPath) => {
+		if (path.isAbsolute(rawPath)) {
+			return toTomlLiteralPath(rawPath);
+		}
+		return toTomlLiteralPath(path.resolve(sourceDir, rawPath));
+	};
+
+	return sourceText
+		.replace(
+			/(\bmain\s*=\s*)(["'])([^"']+)\2/u,
+			(_, prefix, _quote, rawPath) =>
+				`${prefix}${rewriteMaybeRelative(rawPath)}`,
+		)
+		.replace(
+			/(\[assets\][\s\S]*?\bdirectory\s*=\s*)(["'])([^"']+)\2/u,
+			(_, prefix, _quote, rawPath) =>
+				`${prefix}${rewriteMaybeRelative(rawPath)}`,
+		);
+};
+
 const main = async () => {
-	const { selectedTargets, remote } = parseArgs();
+	const { selectedTargets, remote, outputRoot } = parseArgs();
 
 	for (const target of selectedTargets) {
 		const config = TARGETS[target];
@@ -89,8 +141,17 @@ const main = async () => {
 		const outputRelativePath = remote
 			? config.remoteOutput
 			: config.localOutput;
-		const sourcePath = resolvePath(sourceRelativePath);
-		const outputPath = resolvePath(outputRelativePath);
+		const sourcePath = resolveSourcePath(
+			target,
+			sourceRelativePath,
+			outputRoot,
+			remote,
+		);
+		const outputPath = resolveOutputPath(
+			target,
+			outputRelativePath,
+			outputRoot,
+		);
 
 		let sourceText = "";
 		try {
@@ -105,8 +166,15 @@ const main = async () => {
 		}
 
 		const noHotConfig = stripKvNamespacesBlock(sourceText);
-		await writeFile(outputPath, noHotConfig, "utf8");
-		console.log(`✅ 已生成 ${outputRelativePath}`);
+		const finalText = outputRoot
+			? rewriteConfigPathsForExternalOutput(
+					noHotConfig,
+					path.dirname(resolveDefaultPath(config.localSource)),
+				)
+			: noHotConfig;
+		await mkdir(path.dirname(outputPath), { recursive: true });
+		await writeFile(outputPath, finalText, "utf8");
+		console.log(`✅ 已生成 ${path.relative(ROOT, outputPath)}`);
 	}
 };
 

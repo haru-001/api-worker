@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { access, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -23,6 +23,7 @@ const kvIdPattern = /^[0-9a-f]{32}$/i;
 const parseArgs = () => {
 	const args = process.argv.slice(2);
 	let only = "all";
+	let outputRoot = "";
 
 	for (let index = 0; index < args.length; index += 1) {
 		const arg = args[index];
@@ -32,14 +33,28 @@ const parseArgs = () => {
 				only = value;
 				index += 1;
 			}
+			continue;
+		}
+		if (arg === "--output-root") {
+			const value = args[index + 1];
+			if (value) {
+				outputRoot = value;
+				index += 1;
+			}
 		}
 	}
 
 	if (only === "all") {
-		return ["worker", "attempt-worker"];
+		return {
+			selectedTargets: ["worker", "attempt-worker"],
+			outputRoot,
+		};
 	}
 	if (only === "worker" || only === "attempt-worker") {
-		return [only];
+		return {
+			selectedTargets: [only],
+			outputRoot,
+		};
 	}
 
 	throw new Error("--only 仅支持 worker / attempt-worker / all");
@@ -154,20 +169,58 @@ const buildRemoteConfig = (sourceText, ids) => {
 		);
 };
 
-const renderPath = (relativePath) => path.join(ROOT, relativePath);
+const toTomlLiteralPath = (filePath) =>
+	`'${path.resolve(filePath).replace(/'/g, "''")}'`;
+
+const rewriteConfigPathsForExternalOutput = (sourceText, sourceDir) => {
+	const rewriteMaybeRelative = (rawPath) => {
+		if (path.isAbsolute(rawPath)) {
+			return toTomlLiteralPath(rawPath);
+		}
+		return toTomlLiteralPath(path.resolve(sourceDir, rawPath));
+	};
+
+	return sourceText
+		.replace(
+			/(\bmain\s*=\s*)(["'])([^"']+)\2/u,
+			(_, prefix, _quote, rawPath) =>
+				`${prefix}${rewriteMaybeRelative(rawPath)}`,
+		)
+		.replace(
+			/(\[assets\][\s\S]*?\bdirectory\s*=\s*)(["'])([^"']+)\2/u,
+			(_, prefix, _quote, rawPath) =>
+				`${prefix}${rewriteMaybeRelative(rawPath)}`,
+		);
+};
+
+const resolveDefaultPath = (relativePath) => path.join(ROOT, relativePath);
+
+const resolveOutputPath = (target, relativePath, outputRoot) => {
+	if (!outputRoot) {
+		return resolveDefaultPath(relativePath);
+	}
+	return path.resolve(outputRoot, target, path.basename(relativePath));
+};
 
 const main = async () => {
-	const selectedTargets = parseArgs();
+	const { selectedTargets, outputRoot } = parseArgs();
 	const ids = await resolveRemoteIds();
 
 	for (const target of selectedTargets) {
 		const config = TARGETS[target];
-		const sourcePath = renderPath(config.source);
-		const outputPath = renderPath(config.output);
+		const sourcePath = resolveDefaultPath(config.source);
+		const outputPath = resolveOutputPath(target, config.output, outputRoot);
 		const sourceText = await readFile(sourcePath, "utf8");
 		const remoteText = buildRemoteConfig(sourceText, ids);
-		await writeFile(outputPath, remoteText, "utf8");
-		console.log(`✅ 已生成 ${config.output}`);
+		const finalText = outputRoot
+			? rewriteConfigPathsForExternalOutput(
+					remoteText,
+					path.dirname(sourcePath),
+				)
+			: remoteText;
+		await mkdir(path.dirname(outputPath), { recursive: true });
+		await writeFile(outputPath, finalText, "utf8");
+		console.log(`✅ 已生成 ${path.relative(ROOT, outputPath)}`);
 	}
 };
 

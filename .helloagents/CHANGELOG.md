@@ -2,7 +2,25 @@
 
 ## [Unreleased]
 
+### 变更
+
+- **[tooling/docs]**: 统一本地启动运行时目录，Windows 自启动改为计划任务，并新增后台日志模式控制 — by lsy
+  - 方案: [202604022339_startup-runtime-hardening](archive/2026-04/202604022339_startup-runtime-hardening/)
+  - 决策: startup-runtime-hardening#D001(Windows 自启动改用计划任务), startup-runtime-hardening#D002(运行时配置与日志统一收敛到 .dev)
+
 ### 快速修改
+
+- **[tooling]**: 修复计划任务直接执行 `bun.exe` 仍可能弹出控制台窗口，改为隐藏 PowerShell 启动器包裹 `bun run dev -- --bg` — by lsy
+  - 类型: 快速修改（无方案包）
+  - 文件: scripts/autostart.mjs, README.md, .helloagents/modules/tooling.md
+
+- **[tooling]**: 修复 Windows 后台守护进程子进程仍可能弹出控制台窗口，改为隐藏窗口并显式重定向 stdout/stderr 到日志文件或空设备 — by lsy
+  - 类型: 快速修改（无方案包）
+  - 文件: scripts/dev.mjs, README.md, .helloagents/modules/tooling.md
+
+- **[tooling]**: 修复输出到 `.dev/generated/wrangler/` 后 `main` 与 `assets.directory` 仍按相对路径解析，导致 Wrangler 找不到入口文件 — by lsy
+  - 类型: 快速修改（无方案包）
+  - 文件: scripts/prepare-remote-config.mjs, scripts/prepare-no-hot-cache-config.mjs, .helloagents/modules/tooling.md
 
 - **[worker/proxy]**: 删除 `chat-response-adapter` 与 `provider-transform` 中未使用的 JS 回退转换辅助函数，保留 WASM 主路径 — by lsy
   - 类型: 快速修改（无方案包）
