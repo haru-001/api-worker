@@ -23,6 +23,12 @@
 **结果**: 可通过 `--status` / `--stop` 查看与停止后台实例
 **补充**: `--log-mode file|none` 控制后台日志是否写入 `.dev/dev-runner.log`；Windows 后台模式会同时为守护进程子进程启用隐藏窗口，并将 stdout/stderr 显式重定向到日志文件或空设备，降低额外控制台窗口弹出的概率
 
+### 基础校验命令
+**条件**: 执行 `bun run typecheck` 或 `bun run test`
+**行为**: 根脚本保留类型检查与 Vitest 校验入口，其中 `bun run test` 使用 `--passWithNoTests` 兼容当前无测试文件的仓库状态
+**结果**: 交付时仍可执行统一校验链，而不会因为测试文件已移除而中断
+**补充**: Playwright E2E 配置与 `bun run test:e2e` 仍保留，用于长期可复用的端到端验证
+
 ### Windows 自启动
 **条件**: 执行 `bun run autostart -- enable ...`
 **行为**: `scripts/autostart.mjs` 使用 Windows 计划任务注册登录触发任务，由隐藏的 PowerShell 启动器再执行 `bun run dev -- --bg`

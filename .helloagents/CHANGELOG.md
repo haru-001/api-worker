@@ -4,6 +4,10 @@
 
 ### 变更
 
+- **[tooling/docs]**: 清理仓库内本地 unit/service 测试文件，保留 Playwright E2E，并同步校验链说明 — by openclaw
+  - 方案: [202604031348_remove-all-test-files](archive/2026-04/202604031348_remove-all-test-files/)
+  - 决策: remove-all-test-files#D001(删除本地 unit/service 测试，但保留 Playwright E2E)
+
 - **[tooling]**: `bun run autostart` 新增 Linux `systemd --user` 自启动支持，并保留 Windows 计划任务实现 — by openclaw
   - 方案: [202604031311_linux-systemd-autostart](archive/2026-04/202604031311_linux-systemd-autostart/)
   - 决策: linux-systemd-autostart#D001(Linux 自启动采用 systemd --user service)

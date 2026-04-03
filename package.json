@@ -1,37 +1,37 @@
 {
-  "name": "api-worker",
-  "private": true,
-  "packageManager": "bun@1.3.9",
-  "workspaces": [
-    "apps/*"
-  ],
-  "scripts": {
-    "prepare:remote-config": "node scripts/prepare-remote-config.mjs",
-    "prepare:no-hot-cache-config": "node scripts/prepare-no-hot-cache-config.mjs",
-    "build:ui": "bun --filter api-worker-ui build",
-    "dev": "node scripts/dev.mjs",
-    "autostart": "node scripts/autostart.mjs",
-    "dev:worker": "node scripts/dev.mjs --no-attempt-worker --no-ui --no-hot-cache --build-ui",
-    "deploy": "node scripts/deploy.mjs",
-    "deploy:init": "node scripts/deploy.mjs init",
-    "deploy:update": "node scripts/deploy.mjs update",
-    "db:migrate:remote": "bun run prepare:remote-config -- --only worker && bun run --filter api-worker db:migrate:remote",
-    "test": "vitest run --passWithNoTests",
-    "test:e2e": "playwright test",
-    "test:e2e:headed": "playwright test --headed",
-    "format": "bunx --bun biome format --write .",
-    "lint": "bunx --bun biome lint --write .",
-    "check": "bunx --bun biome check --write .",
-    "typecheck": "bunx --bun tsc --noEmit"
-  },
-  "devDependencies": {
-    "@playwright/test": "^1.54.2",
-    "@biomejs/biome": "2.3.15",
-    "@types/node": "^20.11.30",
-    "typescript": "^5.4.5",
-    "vitest": "^1.5.3"
-  },
-  "dependencies": {
-    "wrangler": "^4.79.0"
-  }
+	"name": "api-worker",
+	"private": true,
+	"packageManager": "bun@1.3.9",
+	"workspaces": [
+		"apps/*"
+	],
+	"scripts": {
+		"prepare:remote-config": "node scripts/prepare-remote-config.mjs",
+		"prepare:no-hot-cache-config": "node scripts/prepare-no-hot-cache-config.mjs",
+		"build:ui": "bun --filter api-worker-ui build",
+		"dev": "node scripts/dev.mjs",
+		"autostart": "node scripts/autostart.mjs",
+		"dev:worker": "node scripts/dev.mjs --no-attempt-worker --no-ui --no-hot-cache --build-ui",
+		"deploy": "node scripts/deploy.mjs",
+		"deploy:init": "node scripts/deploy.mjs init",
+		"deploy:update": "node scripts/deploy.mjs update",
+		"db:migrate:remote": "bun run prepare:remote-config -- --only worker && bun run --filter api-worker db:migrate:remote",
+		"test": "vitest run --passWithNoTests",
+		"test:e2e": "playwright test",
+		"test:e2e:headed": "playwright test --headed",
+		"format": "bunx --bun biome format --write .",
+		"lint": "bunx --bun biome lint --write .",
+		"check": "bunx --bun biome check --write .",
+		"typecheck": "bunx --bun tsc --noEmit"
+	},
+	"devDependencies": {
+		"@playwright/test": "^1.54.2",
+		"@biomejs/biome": "2.3.15",
+		"@types/node": "^20.11.30",
+		"typescript": "^5.4.5",
+		"vitest": "^1.5.3"
+	},
+	"dependencies": {
+		"wrangler": "^4.79.0"
+	}
 }

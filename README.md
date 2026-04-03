@@ -255,6 +255,10 @@ bun run db:migrate:remote
 bun run dev -- --remote-d1
 ```
 
+说明：
+
+- 当前仓库保留 Playwright E2E 验证入口；本地 unit/service 测试文件已移除，因此 `bun run test` 会在空测试集场景下正常通过。
+
 ## Agent 协作规范
 
 - 统一执行规范：`AGENTS.md`
@@ -377,6 +381,10 @@ bun run typecheck
 bun run check
 bun run test
 ```
+
+补充：
+
+- 当前 `bun run test` 主要用于保证测试入口可执行；仓库仅保留 Playwright E2E 测试文件，不再保留本地 unit/service 测试文件。
 
 若本地接口异常，优先检查：
 
