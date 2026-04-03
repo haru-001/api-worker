@@ -134,10 +134,7 @@ const parsePortFromEnv = (name, fallback) => {
 	return value;
 };
 
-const workerPort = parsePortFromEnv(
-	"DEV_WORKER_PORT",
-	parsePortFromEnv("DEV_PORT", 8787),
-);
+const workerPort = parsePortFromEnv("DEV_WORKER_PORT", 8787);
 const attemptWorkerPort = parsePortFromEnv("DEV_ATTEMPT_WORKER_PORT", 8788);
 const uiPort = parsePortFromEnv("DEV_UI_PORT", 4173);
 const workerInspectorPort = parsePortFromEnv("DEV_WORKER_INSPECTOR_PORT", 9229);

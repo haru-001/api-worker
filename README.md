@@ -197,7 +197,7 @@ bun --filter api-worker-ui dev -- --port 4173
 
 支持环境变量覆盖（`bun run dev` 生效）：
 
-- `DEV_PORT` / `DEV_WORKER_PORT`：主 Worker 端口（默认 `8787`）
+- `DEV_WORKER_PORT`：主 Worker 端口（默认 `8787`）
 - `DEV_ATTEMPT_WORKER_PORT`：调用执行器端口（默认 `8788`）
 - `DEV_UI_PORT`：UI 端口（默认 `4173`）
 
