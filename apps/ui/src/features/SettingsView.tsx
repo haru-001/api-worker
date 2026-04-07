@@ -1123,6 +1123,10 @@ export const SettingsView = ({
 							全量导出（含敏感字段）与 WebDAV 上传/下载
 						</p>
 					</div>
+					<p class="app-settings-row__hint">
+						以下同步策略与 WebDAV
+						配置仅保留在当前实例，不会随备份导出、导入或云端同步一起覆盖其他地方。
+					</p>
 					<div class="app-settings-backup-status-line">
 						<span class={backupStatusClass}>{backupStatusLabel}</span>
 						<span class={backupPendingClass}>{backupPendingLabel}</span>
@@ -1430,7 +1434,7 @@ export const SettingsView = ({
 								class="app-settings-row__control"
 								id="backup-webdav-password"
 								name="backup_webdav_password"
-								type="password"
+								type="text"
 								value={backupSettings.webdav_password}
 								onInput={(event) => {
 									const target = event.currentTarget as HTMLInputElement | null;

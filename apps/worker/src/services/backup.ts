@@ -5,6 +5,10 @@ import {
 	updateChannel,
 } from "./channel-repo";
 import { replaceCallTokensForChannel } from "./channel-call-token-repo";
+import {
+	BACKUP_LOCAL_ONLY_SETTING_KEYS,
+	isBackupLocalOnlySettingKey,
+} from "./settings";
 import { sha256Hex } from "../utils/crypto";
 import { safeJsonParse } from "../utils/json";
 import { nowIso } from "../utils/time";
@@ -209,7 +213,7 @@ const normalizeSettingRecords = (input: unknown): BackupSettingRecord[] => {
 	for (const item of input) {
 		const row = item as Record<string, unknown>;
 		const key = String(row.key ?? "").trim();
-		if (!key) {
+		if (!key || isBackupLocalOnlySettingKey(key)) {
 			continue;
 		}
 		const value = String(row.value ?? "");
@@ -478,6 +482,7 @@ export async function createBackupPayload(
 			value: String(row.value ?? ""),
 			updated_at: normalizeIsoOrNull(row.updated_at),
 		}))
+		.filter((row) => !isBackupLocalOnlySettingKey(row.key))
 		.sort((left, right) => left.key.localeCompare(right.key));
 
 	const channelsResult = await db
@@ -644,7 +649,9 @@ export async function importBackupPayload(
 		.prepare("SELECT key FROM settings")
 		.all<{ key: string }>();
 	const existingSettingSet = new Set(
-		(existingSettingsResult.results ?? []).map((item) => item.key),
+		(existingSettingsResult.results ?? [])
+			.map((item) => item.key)
+			.filter((key) => !isBackupLocalOnlySettingKey(key)),
 	);
 	for (const setting of backup.settings) {
 		if (existingSettingSet.has(setting.key)) {
@@ -704,7 +711,13 @@ export async function importBackupPayload(
 		await db.prepare("DELETE FROM channel_call_tokens").run();
 		await db.prepare("DELETE FROM channels").run();
 		await db.prepare("DELETE FROM tokens").run();
-		await db.prepare("DELETE FROM settings").run();
+		const placeholders = BACKUP_LOCAL_ONLY_SETTING_KEYS.map(() => "?").join(
+			", ",
+		);
+		await db
+			.prepare(`DELETE FROM settings WHERE key NOT IN (${placeholders})`)
+			.bind(...BACKUP_LOCAL_ONLY_SETTING_KEYS)
+			.run();
 	}
 
 	for (const setting of backup.settings) {

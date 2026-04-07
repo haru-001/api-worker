@@ -173,6 +173,14 @@ const BACKUP_SETTING_KEYS = [
 	BACKUP_PENDING_AT_KEY,
 ] as const;
 
+export const BACKUP_LOCAL_ONLY_SETTING_KEYS = [...BACKUP_SETTING_KEYS];
+
+export function isBackupLocalOnlySettingKey(key: string): boolean {
+	return BACKUP_LOCAL_ONLY_SETTING_KEYS.includes(
+		key as (typeof BACKUP_LOCAL_ONLY_SETTING_KEYS)[number],
+	);
+}
+
 export type RuntimeProxyConfig = {
 	upstream_timeout_ms: number;
 	retry_max_retries: number;
