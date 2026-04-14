@@ -51,6 +51,10 @@ import {
 	type ProxyErrorAction,
 } from "../../../worker/src/services/proxy-error-policy";
 import {
+	getSuccessfulUsageWarning,
+	shouldValidateToolSchemasFromRequestText,
+} from "../../../worker/src/services/proxy-request-guards";
+import {
 	applyGeminiModelToPath,
 	buildUpstreamChatRequest,
 	buildUpstreamEmbeddingRequest,
@@ -3032,8 +3036,13 @@ proxy.all("/*", tokenAuth, async (c) => {
 			},
 		});
 	};
-	if (parsedBodyInitialized) {
-		const toolSchemaIssue = validateToolSchemasInBody(parsedBody);
+	const toolSchemaValidationBody = parsedBodyInitialized
+		? parsedBody
+		: shouldValidateToolSchemasFromRequestText(downstreamProvider, requestText)
+			? ensureParsedBody()
+			: null;
+	if (toolSchemaValidationBody) {
+		const toolSchemaIssue = validateToolSchemasInBody(toolSchemaValidationBody);
 		if (toolSchemaIssue) {
 			recordEarlyUsage({
 				status: 400,
@@ -3052,7 +3061,7 @@ proxy.all("/*", tokenAuth, async (c) => {
 		}
 		if (downstreamProvider === "openai") {
 			const toolCallChainIssue = validateOpenAiToolCallChainShared(
-				parsedBody,
+				toolSchemaValidationBody,
 				endpointType,
 				responsesRequestHints,
 			);
@@ -5735,20 +5744,54 @@ proxy.all("/*", tokenAuth, async (c) => {
 				});
 			}
 		}
+		const usageWarning = getSuccessfulUsageWarning({
+			isStream,
+			endpointType,
+			usage,
+		});
+		if (
+			usageWarning &&
+			selectedAttemptIndex !== null &&
+			selectedAttemptStartedAt &&
+			selectedAttemptLatencyMs !== null
+		) {
+			recordAttemptLog({
+				attemptIndex: selectedAttemptIndex,
+				channelId: selectedChannel.id,
+				provider: selectedUpstreamProvider,
+				model: selectedUpstreamModel ?? downstreamModel,
+				status: "warn",
+				errorClass: "usage_observe",
+				errorCode: usageWarning.code,
+				httpStatus: selectedResponse.status,
+				latencyMs: selectedAttemptLatencyMs,
+				upstreamRequestId: selectedAttemptUpstreamRequestId,
+				startedAt: selectedAttemptStartedAt,
+				endedAt: new Date().toISOString(),
+			});
+		}
 		recordAttemptUsage({
 			channelId: selectedChannel.id,
 			requestPath: selectedRequestPath,
 			latencyMs: selectedLatencyMs,
 			firstTokenLatencyMs,
 			usage,
-			status: streamMetaPartial ? "warn" : "ok",
+			status: streamMetaPartial || usageWarning ? "warn" : "ok",
 			upstreamStatus: selectedResponse.status,
-			errorCode: streamMetaPartial ? STREAM_META_PARTIAL_CODE : null,
-			errorMessage: streamMetaPartial ? STREAM_META_PARTIAL_CODE : null,
-			failureStage: streamMetaPartial
+			errorCode:
+				usageWarning?.code ??
+				(streamMetaPartial ? STREAM_META_PARTIAL_CODE : null),
+			errorMessage:
+				usageWarning?.message ??
+				(streamMetaPartial ? STREAM_META_PARTIAL_CODE : null),
+			failureStage: usageWarning
 				? USAGE_OBSERVE_FAILURE_STAGE
-				: "usage_finalize",
-			failureReason: streamMetaPartial ? STREAM_META_PARTIAL_CODE : null,
+				: streamMetaPartial
+					? USAGE_OBSERVE_FAILURE_STAGE
+					: "usage_finalize",
+			failureReason:
+				usageWarning?.code ??
+				(streamMetaPartial ? STREAM_META_PARTIAL_CODE : null),
 			usageSource,
 		});
 	}
