@@ -3466,6 +3466,17 @@ proxy.all("/*", tokenAuth, async (c) => {
 	let selectedRequestPath = targetPath;
 	let selectedImmediateUsage: NormalizedUsage | null = null;
 	let selectedImmediateUsageSource: "json" | "header" | "none" = "none";
+	let selectedHasUsageSignal = false;
+	let selectedStreamUsageContext: {
+		usage: NormalizedUsage | null;
+		usageSource: string;
+		firstTokenLatencyMs: number | null;
+		status: "ok" | "warn";
+		errorCode: string | null;
+		errorMessage: string | null;
+		failureStage: string;
+		failureReason: string | null;
+	} | null = null;
 	let selectedParsedStreamUsage: StreamUsage | null = null;
 	let selectedHasUsageHeaders = false;
 	let selectedAttemptIndex: number | null = null;
@@ -3473,10 +3484,47 @@ proxy.all("/*", tokenAuth, async (c) => {
 	let selectedAttemptLatencyMs: number | null = null;
 	let selectedAttemptUpstreamRequestId: string | null = null;
 	let selectedClientDisconnectRecorded = false;
+	let selectedStreamUsageRecorded = false;
 	let lastErrorDetails: ErrorDetails | null = null;
 	let attemptsExecuted = 0;
 	const blockedChannelIds = new Set<string>();
-	const recordSelectedClientDisconnect = () => {
+	const recordSelectedStreamUsage = (options: {
+		usage: NormalizedUsage | null;
+		usageSource: string;
+		firstTokenLatencyMs: number | null;
+		status: "ok" | "warn" | "error";
+		errorCode?: string | null;
+		errorMessage?: string | null;
+		failureStage: string;
+		failureReason?: string | null;
+		errorMetaJson?: string | null;
+	}) => {
+		if (selectedStreamUsageRecorded || !selectedResponse || !selectedChannel) {
+			return;
+		}
+		selectedStreamUsageRecorded = true;
+		recordAttemptUsage({
+			channelId: selectedChannel.id,
+			requestPath: selectedRequestPath,
+			latencyMs: Date.now() - requestStart,
+			firstTokenLatencyMs: options.firstTokenLatencyMs,
+			usage: options.usage,
+			status: options.status,
+			upstreamStatus: selectedResponse.status,
+			errorCode: options.errorCode ?? null,
+			errorMessage: options.errorMessage ?? null,
+			failureStage: options.failureStage,
+			failureReason: options.failureReason ?? options.errorCode ?? null,
+			usageSource: options.usageSource,
+			errorMetaJson: options.errorMetaJson ?? null,
+		});
+	};
+	const recordSelectedClientDisconnect = (options?: {
+		usage?: NormalizedUsage | null;
+		usageSource?: string | null;
+		firstTokenLatencyMs?: number | null;
+		failureReason?: string | null;
+	}) => {
 		if (
 			selectedClientDisconnectRecorded ||
 			!selectedResponse ||
@@ -3486,22 +3534,38 @@ proxy.all("/*", tokenAuth, async (c) => {
 		}
 		selectedClientDisconnectRecorded = true;
 		const latencyMs = Date.now() - requestStart;
+		const failureReason =
+			options?.failureReason ?? DOWNSTREAM_CLIENT_ABORT_ERROR_CODE;
+		const usageSource =
+			options?.usageSource ??
+			selectedStreamUsageContext?.usageSource ??
+			selectedImmediateUsageSource;
+		const firstTokenLatencyMs =
+			options?.firstTokenLatencyMs ??
+			selectedStreamUsageContext?.firstTokenLatencyMs ??
+			(isStream ? null : (selectedAttemptLatencyMs ?? latencyMs));
+		const usage =
+			options?.usage ??
+			selectedStreamUsageContext?.usage ??
+			selectedImmediateUsage;
 		recordAttemptUsage({
 			channelId: selectedChannel.id,
 			requestPath: selectedRequestPath,
 			latencyMs,
-			firstTokenLatencyMs: isStream
-				? null
-				: (selectedAttemptLatencyMs ?? latencyMs),
-			usage: selectedImmediateUsage,
+			firstTokenLatencyMs,
+			usage,
 			status: "warn",
 			upstreamStatus: selectedResponse.status,
 			errorCode: DOWNSTREAM_CLIENT_ABORT_ERROR_CODE,
-			errorMessage: DOWNSTREAM_CLIENT_ABORT_ERROR_CODE,
+			errorMessage:
+				failureReason === DOWNSTREAM_CLIENT_ABORT_ERROR_CODE
+					? DOWNSTREAM_CLIENT_ABORT_ERROR_CODE
+					: `${DOWNSTREAM_CLIENT_ABORT_ERROR_CODE}: ${failureReason}`,
 			failureStage: "downstream_response",
-			failureReason: DOWNSTREAM_CLIENT_ABORT_ERROR_CODE,
-			usageSource: selectedImmediateUsageSource,
+			failureReason,
+			usageSource,
 		});
+		selectedStreamUsageRecorded = true;
 		if (
 			selectedAttemptIndex !== null &&
 			selectedAttemptStartedAt &&
@@ -4377,6 +4441,7 @@ proxy.all("/*", tokenAuth, async (c) => {
 								selectedRequestPath = responsePath;
 								selectedImmediateUsage = immediateUsage;
 								selectedImmediateUsageSource = immediateUsageSource;
+								selectedHasUsageSignal = hasAnyUsageSignal;
 								selectedParsedStreamUsage = parsedSuccessStreamUsage;
 								selectedHasUsageHeaders = hasUsageHeaderSignal;
 								selectedAttemptIndex = attemptNumber;
@@ -5319,6 +5384,7 @@ proxy.all("/*", tokenAuth, async (c) => {
 					selectedRequestPath = responsePath;
 					selectedImmediateUsage = immediateUsage;
 					selectedImmediateUsageSource = immediateUsageSource;
+					selectedHasUsageSignal = hasAnyUsageSignal;
 					selectedParsedStreamUsage = parsedSuccessStreamUsage;
 					selectedHasUsageHeaders = hasUsageHeaderSignal;
 					selectedAttemptIndex = attemptNumber;
@@ -5647,7 +5713,6 @@ proxy.all("/*", tokenAuth, async (c) => {
 	let responseToReturn = selectedResponse;
 
 	if (selectedChannel && isStream) {
-		const selectedLatencyMs = Date.now() - requestStart;
 		const streamUsageProcessed = parseBooleanHeader(
 			selectedResponse.headers.get(ATTEMPT_STREAM_USAGE_PROCESSED_HEADER),
 		);
@@ -5798,30 +5863,25 @@ proxy.all("/*", tokenAuth, async (c) => {
 				endedAt: new Date().toISOString(),
 			});
 		}
-		recordAttemptUsage({
-			channelId: selectedChannel.id,
-			requestPath: selectedRequestPath,
-			latencyMs: selectedLatencyMs,
-			firstTokenLatencyMs,
+		selectedStreamUsageContext = {
 			usage,
+			usageSource,
+			firstTokenLatencyMs,
 			status: streamMetaPartial || usageWarning ? "warn" : "ok",
-			upstreamStatus: selectedResponse.status,
 			errorCode:
 				usageWarning?.code ??
 				(streamMetaPartial ? STREAM_META_PARTIAL_CODE : null),
 			errorMessage:
 				usageWarning?.message ??
 				(streamMetaPartial ? STREAM_META_PARTIAL_CODE : null),
-			failureStage: usageWarning
-				? USAGE_OBSERVE_FAILURE_STAGE
-				: streamMetaPartial
+			failureStage:
+				usageWarning || streamMetaPartial
 					? USAGE_OBSERVE_FAILURE_STAGE
 					: "usage_finalize",
 			failureReason:
 				usageWarning?.code ??
 				(streamMetaPartial ? STREAM_META_PARTIAL_CODE : null),
-			usageSource,
-		});
+		};
 	}
 
 	if (
@@ -5905,6 +5965,29 @@ proxy.all("/*", tokenAuth, async (c) => {
 	}
 	if (selectedChannel && !isStream) {
 		const selectedLatencyMs = Date.now() - requestStart;
+		if (!selectedImmediateUsage) {
+			const usageMissingCode = selectedHasUsageSignal
+				? "usage_missing.non_stream.signal_present_unparseable"
+				: "usage_missing.non_stream.signal_absent";
+			recordAttemptUsage({
+				channelId: selectedChannel.id,
+				requestPath: selectedRequestPath,
+				latencyMs: selectedLatencyMs,
+				firstTokenLatencyMs: selectedAttemptLatencyMs ?? selectedLatencyMs,
+				usage: null,
+				status: "error",
+				upstreamStatus: selectedResponse.status,
+				errorCode: usageMissingCode,
+				errorMessage: `usage_missing: ${usageMissingCode}`,
+				failureStage: "usage_finalize",
+				failureReason: usageMissingCode,
+				usageSource: selectedImmediateUsageSource,
+			});
+			return buildDirectErrorResponse(
+				selectedResponse.status,
+				usageMissingCode,
+			);
+		}
 		recordAttemptUsage({
 			channelId: selectedChannel.id,
 			requestPath: selectedRequestPath,
@@ -5916,6 +5999,136 @@ proxy.all("/*", tokenAuth, async (c) => {
 			failureStage: "usage_finalize",
 			usageSource: selectedImmediateUsageSource,
 		});
+	}
+	if (selectedChannel && isStream && selectedStreamUsageContext) {
+		if (!responseToReturn.body) {
+			recordSelectedStreamUsage(selectedStreamUsageContext);
+		} else {
+			const headers = new Headers(responseToReturn.headers);
+			headers.delete("content-length");
+			const source = responseToReturn.body;
+			const reader = source.getReader();
+			let finalized = false;
+			let readerCancelled = false;
+			let firstByteSent = false;
+			const cancelReader = (reason?: unknown) => {
+				if (readerCancelled) {
+					return Promise.resolve();
+				}
+				readerCancelled = true;
+				return reader.cancel(reason).catch(() => undefined);
+			};
+			const finalizeStreamDisconnect = () => {
+				if (finalized) {
+					return;
+				}
+				finalized = true;
+				recordSelectedClientDisconnect({
+					usage: selectedStreamUsageContext.usage,
+					usageSource: selectedStreamUsageContext.usageSource,
+					firstTokenLatencyMs: selectedStreamUsageContext.firstTokenLatencyMs,
+					failureReason: firstByteSent
+						? "client_disconnected.after_first_byte"
+						: "client_disconnected.before_first_byte",
+				});
+			};
+			const finalizeStreamError = (error: unknown) => {
+				if (finalized) {
+					return;
+				}
+				finalized = true;
+				const failureReason = firstByteSent
+					? "downstream_stream_failed.after_first_byte"
+					: "downstream_stream_failed.before_first_byte";
+				const message =
+					error instanceof Error ? error.message : "downstream_stream_failed";
+				recordSelectedStreamUsage({
+					usage: selectedStreamUsageContext.usage,
+					usageSource: selectedStreamUsageContext.usageSource,
+					firstTokenLatencyMs: selectedStreamUsageContext.firstTokenLatencyMs,
+					status: "error",
+					errorCode: "downstream_stream_failed",
+					errorMessage: `downstream_stream_failed: ${message}`,
+					failureStage: "downstream_response",
+					failureReason,
+					errorMetaJson: JSON.stringify({
+						type: "downstream_stream_failed",
+						phase: firstByteSent ? "after_first_byte" : "before_first_byte",
+						message,
+					}),
+				});
+				if (
+					selectedAttemptIndex !== null &&
+					selectedAttemptStartedAt &&
+					selectedAttemptLatencyMs !== null
+				) {
+					recordAttemptLog({
+						attemptIndex: selectedAttemptIndex,
+						channelId: selectedChannel.id,
+						provider: selectedUpstreamProvider,
+						model: selectedUpstreamModel ?? downstreamModel,
+						status: "error",
+						errorClass: "downstream_response",
+						errorCode: "downstream_stream_failed",
+						httpStatus: selectedResponse.status,
+						latencyMs: selectedAttemptLatencyMs,
+						upstreamRequestId: selectedAttemptUpstreamRequestId,
+						startedAt: selectedAttemptStartedAt,
+						endedAt: new Date().toISOString(),
+					});
+				}
+			};
+			const finalizeStreamSuccess = () => {
+				if (finalized) {
+					return;
+				}
+				finalized = true;
+				recordSelectedStreamUsage(selectedStreamUsageContext);
+			};
+			const abortListener = () => {
+				finalizeStreamDisconnect();
+				void cancelReader(DOWNSTREAM_CLIENT_ABORT_ERROR_CODE);
+			};
+			downstreamSignal.addEventListener("abort", abortListener, { once: true });
+			const observedStream = new ReadableStream<Uint8Array>({
+				async start(controller) {
+					try {
+						while (true) {
+							const { done, value } = await reader.read();
+							if (done) {
+								finalizeStreamSuccess();
+								controller.close();
+								return;
+							}
+							if (value.byteLength > 0) {
+								firstByteSent = true;
+							}
+							controller.enqueue(value);
+						}
+					} catch (error) {
+						if (finalized || downstreamSignal.aborted) {
+							finalizeStreamDisconnect();
+							return;
+						}
+						finalizeStreamError(error);
+						controller.error(error);
+					} finally {
+						downstreamSignal.removeEventListener("abort", abortListener);
+						reader.releaseLock();
+					}
+				},
+				cancel(reason) {
+					finalizeStreamDisconnect();
+					downstreamSignal.removeEventListener("abort", abortListener);
+					return cancelReader(reason);
+				},
+			});
+			responseToReturn = new Response(observedStream, {
+				status: responseToReturn.status,
+				statusText: responseToReturn.statusText,
+				headers,
+			});
+		}
 	}
 
 	responseAttemptCount = attemptsExecuted;

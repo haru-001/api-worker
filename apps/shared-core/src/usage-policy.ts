@@ -39,9 +39,6 @@ export function shouldTreatMissingUsageAsError(
 	if (input.isStream) {
 		return false;
 	}
-	if (input.bodyParsingSkipped) {
-		return false;
-	}
 	return true;
 }
 

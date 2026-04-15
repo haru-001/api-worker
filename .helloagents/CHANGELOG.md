@@ -26,6 +26,14 @@
   - 方案: [202604151107_fix-proxy-false-success-and-site-recovery](plan/202604151107_fix-proxy-false-success-and-site-recovery/)
   - 决策: fix-proxy-false-success-and-site-recovery#D001(统一成功真实性判定并复用于站点验证), fix-proxy-false-success-and-site-recovery#D002(客户端未收包单独记为 client_disconnected)
 
+- **[proxy/usage]**: 修复大请求 offload 路径仍可能放过非流式缺失 usage，并在最终 usage 落库前补一层缺失 usage 兜底，避免再次出现 `usage_source=none` 仍记 `200` 成功 — by Codex
+  - 类型: 快速修改（无方案包）
+  - 文件: apps/shared-core/src/usage-policy.ts, apps/worker/src/shared/proxy.ts, .helloagents/modules/usage.md
+
+- **[proxy/usage]**: 补齐流式下游交付观测；流式 usage 改为按真实交付结果落库，客户端断开会区分首包前/首包后，避免“上游成功但客户端没收到”仍被记成绿色成功 — by Codex
+  - 类型: 快速修改（无方案包）
+  - 文件: apps/worker/src/shared/proxy.ts, .helloagents/modules/usage.md
+
 - **[worker/proxy]**: 补齐普通单次 attempt 路径的取消传播；本地 dev 默认走 `LOCAL_ATTEMPT_WORKER_URL` 时，direct/local_http/binding 三条调用链都会在客户端断链后停止继续重试 — by lsy
   - 方案: [202604091222_stop-local-dev-retry-after-client-disconnect](archive/2026-04/202604091222_stop-local-dev-retry-after-client-disconnect/)
   - 决策: stop-local-dev-retry-after-client-disconnect#D001(先补齐普通 attempt 取消传播，不直接改 dev transport 默认值)

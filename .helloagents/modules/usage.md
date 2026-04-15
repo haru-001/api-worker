@@ -21,6 +21,8 @@
 - 支持按 `model/channel/token/status` 关键词搜索（保留 `channel_id/token_id` 精确过滤，新增 `channel_ids`/`token_ids`/`models`/`statuses` 多选过滤）
 - usage_logs 记录输入/输出 tokens、首 token 延迟、流式标记与推理强度
 - 非流式 `200` 若缺失 usage，不再默认等价为真实 `0 token` 成功
+- 大请求 offload 路径不会再因为跳过 request body 解析而放过非流式缺失 usage；最终写 usage 前也会再次兜底拦截
+- 流式请求的 usage 记录改为在实际下游交付完成后落库；客户端中途断开会标记 `client_disconnected.before_first_byte` 或 `client_disconnected.after_first_byte`
 - 推理强度来自请求体 `reasoning` / `reasoning_effort` 字段
 - usage_logs 记录上游失败详情（status/code/message），日志列表仅展示上游状态码，缺失时显示“未知”，详情弹窗包含元信息与错误摘要
 
